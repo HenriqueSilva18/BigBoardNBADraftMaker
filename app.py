@@ -212,7 +212,7 @@ def save_big_board_to_txt(big_board, filename="big_board_nba_draft_2025.txt"):
             for index, row in big_board.iterrows():
                 rank = index + 1  # Rank starts at 1
                 name = row['Name']
-                position = row['Role']
+                position = row['Position']
                 f.write(f"{rank}. {name} - {position}\n")
         return True
     except Exception as e:
@@ -379,7 +379,7 @@ if not st.session_state.big_board.empty:
     display_board.index = display_board.index + 1
     display_board.index.name = "Rank"
 
-    display_cols = ["Name", "Tier", "Média Ponderada", "Age", "Height", "Role", "College/Team"] + EVAL_CATEGORIES
+    display_cols = ["Name", "Tier", "Média Ponderada", "Age", "Height", "Position", "College/Team"] + EVAL_CATEGORIES
     display_board = display_board[display_cols]
 
     st.info("💡 You can double-click a 'Tier' cell to override it.")
