@@ -206,18 +206,18 @@ def create_overlaid_radar_chart(players_data, figsize):
 
 #only save rank number, the name and the position
 def save_big_board_to_txt(big_board, filename="big_board_nba_draft_2025.txt"):
-    try:
-        with open(filename, 'w') as f:
-            f.write ("🏀 NBA Draft Big Board 2025 Rankings\n\n")
-            for index, row in big_board.iterrows():
-                rank = index + 1  # Rank starts at 1
-                name = row['Name']
-                position = row['Position']
-                f.write(f"{rank}. {name} - {position}\n")
-        return True
-    except Exception as e:
-        st.error(f"Error saving file: {e}")
-        return False
+    if big_board.empty:
+        return "A Big Board está vazia."  # Retorna uma string
+
+    linhas = ["🏀 NBA Draft Big Board 2025 Rankings\n"]
+    for index, row in big_board.iterrows():
+        rank = index + 1
+        nome = row.get('Name', 'N/A')
+        posicao = row.get('Position', 'N/A')
+        linhas.append(f"{rank}. {nome} - {posicao}")
+
+    # O passo mais importante: retorna a string completa
+    return "\n".join(linhas)
 
 # --- File Operations ---
 def save_big_board_to_file(big_board, filename="big_board_save.json"):
@@ -273,25 +273,59 @@ if "auto_loaded" not in st.session_state:
 # --- Sidebar Controls ---
 with st.sidebar:
     st.header("🎛️ Controls")
-    st.subheader("💾 Save/Load")
-    if st.button("💾 Save", use_container_width=True):
-        if save_big_board_to_txt(st.session_state.big_board):
-            st.success("Big Board Saved!")
+    st.subheader("💾 Download / 📁 Load")
 
-    uploaded_file = st.file_uploader("📁 Load", type=['json'])
+    # A lógica de download só deve aparecer se a big board não estiver vazia
+    if 'big_board' in st.session_state and not st.session_state.big_board.empty:
+
+        # OPÇÃO 1: DOWNLOAD DO BACKUP COMPLETO (JSON)
+        # Este ficheiro serve para poder carregar o estado da board mais tarde.
+        st.download_button(
+            label="💾 Download Full Backup (JSON)",
+            data=st.session_state.big_board.to_json(orient='records', indent=2).encode('utf-8'),
+            file_name="big_board_backup_2025.json",
+            mime="application/json",
+            help="Saves the entire Big Board as a JSON file, that can be reuploaded.",
+            use_container_width=True
+        )
+
+        big_board_text = save_big_board_to_txt(st.session_state.big_board)
+        st.download_button(
+            label="📄 Download as Simple Text (.txt)",
+            data=big_board_text.encode('utf-8'),
+            file_name="big_board_rankings_2025.txt",
+            mime="text/plain",
+            help="Saves a simple text file with player rankings and positions.",
+            use_container_width=True
+        )
+
+    else:
+        st.info("A Big Board está vazia. Adicione jogadores para ativar os downloads.")
+
+    # LÓGICA DE UPLOAD (CARREGAR)
+    uploaded_file = st.file_uploader("📁 Load Full Backup (JSON)", type=['json'])
     if uploaded_file:
-        loaded_board = pd.read_json(uploaded_file)
-        for col in st.session_state.big_board.columns:
-            if col not in loaded_board.columns:
-                loaded_board[col] = 5 if col in EVAL_CATEGORIES else 'N/A'
-        st.session_state.big_board = loaded_board
-        st.success("Big Board Loaded!")
-        st.rerun()
+        try:
+            loaded_board = pd.read_json(uploaded_file)
+            # Lógica para garantir que todas as colunas existem no ficheiro carregado
+            if 'big_board' in st.session_state:
+                for col in st.session_state.big_board.columns:
+                    if col not in loaded_board.columns:
+                        # Assumindo que EVAL_CATEGORIES é uma lista/set das suas categorias
+                        loaded_board[col] = 5 if col in EVAL_CATEGORIES else 'N/A'
+
+            st.session_state.big_board = loaded_board
+            st.success("Big Board loaded successfully!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error loading file: {e}")
 
     st.markdown("---")
     st.subheader("📊 Evaluation Weights")
-    for cat, weight in WEIGHTS.items():
-        st.text(f"• {cat}: {int(weight * 100)}%")
+    # Assumindo que a constante WEIGHTS existe
+    if 'WEIGHTS' in locals() or 'WEIGHTS' in globals():
+        for cat, weight in WEIGHTS.items():
+            st.text(f"• {cat}: {int(weight * 100)}%")
 
 
 # --- Callbacks ---
@@ -405,11 +439,16 @@ if not st.session_state.big_board.empty:
         save_big_board_to_file(st.session_state.big_board)
         st.rerun()
     # add button to save big board to txt file
-    if st.button("💾 Save Big Board to Text File"):
-        if save_big_board_to_txt(st.session_state.big_board):
-            st.success("Big Board saved to text file!")
-        else:
-            st.error("Failed to save Big Board to text file.")
+    big_board = save_big_board_to_txt(st.session_state.big_board)
+    if big_board:
+        st.download_button(
+            label="💾 Download Big Board as Text File",
+            data=big_board.encode('utf-8'),  # Importante: converter string para bytes
+            file_name="big_board.txt",
+            mime="text/plain"
+        )
+    else:
+        st.error("Failed to save Big Board to text file.")
 else:
     st.info("👆 Add your first player to get started!")
 
