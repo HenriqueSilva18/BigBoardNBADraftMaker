@@ -18,15 +18,15 @@ EVAL_CATEGORIES = [
 
 # Define weights for the new categories
 WEIGHTS = {
-    "Athleticism": 1/9,
-    "Scoring": 1/9,
-    "Shooting": 1/9,
-    "Dribbling": 1/9,
-    "Passing": 1/9,
-    "Perimeter Defense": 1/9,
-    "Interior Defense": 1/9,
-    "Basketball IQ": 1/9,
-    "Intangibles": 1/9
+    "Athleticism": 1/8,
+    "Scoring": 1/8,
+    "Shooting": 1/8,
+    "Dribbling": 1/8,
+    "Passing": 1/8,
+    "Perimeter Defense": 1/16,
+    "Interior Defense": 1/16,
+    "Basketball IQ": 1/8,
+    "Intangibles": 1/8
 }
 
 
@@ -480,14 +480,16 @@ if nome:
 st.markdown("**Evaluation Categories:**")
 scores = {}
 cols = st.columns(3)
-for i, category in enumerate(EVAL_CATEGORIES):
-    with cols[i % 3]:
-        scores[category] = st.slider(
-            f"{category}",
-            0, 10,
-            value=st.session_state.get(f"slider_{category}", 5),
-            key=f"slider_{category}"
-        )
+
+if 'WEIGHTS' in locals() or 'WEIGHTS' in globals():
+    for i, category in enumerate(EVAL_CATEGORIES):
+        with cols[i % 3]:
+            scores[category] = st.slider(
+                f"{category} ({WEIGHTS[category] * 100:.0f}%)",
+                0, 10,
+                value=st.session_state.get(f"slider_{category}", 5),
+                key=f"slider_{category}"
+            )
 
 # Real-time preview calculation (now updates automatically with slider changes)
 media_preview = calculate_weighted_average(scores)
@@ -527,6 +529,7 @@ with st.form("form_jogador"):
             submitted = st.form_submit_button(button_text, type="primary", help=button_help)
         with col2:
             remove_player = st.form_submit_button("🗑️ Remove", type="secondary", help=f"Remove {nome} from Big Board")
+
     else:
         submitted = st.form_submit_button(button_text, type="primary", use_container_width=True, help=button_help)
         remove_player = False

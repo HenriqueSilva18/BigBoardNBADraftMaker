@@ -2,3 +2,6 @@ pandas
 streamlit
 matplotlib
 numpy
+os
+json
+io
