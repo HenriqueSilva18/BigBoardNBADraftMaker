@@ -207,11 +207,12 @@ def apply_highlighting(df_display, df_numeric, cols_max, cols_min):
 
 def get_tier(score):
     """Assign a tier based on the weighted score."""
+    if score >= 9.5: return "Tier 0 - All-Time Talent"
     if score >= 8.5: return "Tier 1 - Superstar"
     if score >= 7.5  : return "Tier 2 - Potential All-NBA"
     if score >= 6.5: return "Tier 3 - Potential All-Star"
     if score >= 5: return "Tier 4 - Starter"
-    return "Tier 5 - Role Player"
+    return "Tier 5 – Fringe NBA / G-League"
 
 
 # --- Visualization ---
@@ -224,7 +225,7 @@ def create_overlaid_radar_chart(players_data, figsize):
     num_vars = len(categories)
     angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
     angles += angles[:1]
-    fig, ax = plt.subplots(figsize = figsize, subplot_kw=dict(projection='polar'))
+    fig, ax = plt.subplots(figsize=figsize, subplot_kw=dict(projection='polar'))
     fig.patch.set_alpha(0.0)
     ax.patch.set_alpha(0.0)
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
@@ -236,13 +237,14 @@ def create_overlaid_radar_chart(players_data, figsize):
         ax.fill(angles, values, alpha=0.2, color=color)
     ax.set_yticklabels([])
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(categories, size=10, color='white')
+    ax.set_xticklabels([])  # Remove os labels padrão
+
+    # Adiciona os labels manualmente com maior distância
     outline_effect = [path_effects.Stroke(linewidth=1.5, foreground='black'), path_effects.Normal()]
-    for label in ax.get_xticklabels():
-        # Aplica o contorno
-        label.set_path_effects(outline_effect)
-        # NOVO: Define um zorder alto para o texto ficar por cima de tudo
-        label.set_zorder(10)
+    for angle, category in zip(angles[:-1], categories):
+        ax.text(angle, 11.7, category, horizontalalignment='center', verticalalignment='center',
+                size=10, color='white', path_effects=outline_effect, zorder=10)
+
     ax.set_ylim(0, 10)
     ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), labelcolor='black', fontsize=10, markerscale=0.8,
               handletextpad=0.5, labelspacing=0.8)
