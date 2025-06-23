@@ -338,52 +338,65 @@ def reset_sliders():
 # --- Add Player Section (CORRECTED) ---
 st.subheader("➕ Add Player")
 
-# --- SOLUTION: Player selection is now OUTSIDE the form ---
-# This allows us to use the on_change callback without erroring.
 if df is not None:
     available_players = sorted(df['name'].dropna().unique())
     st.selectbox(
         "Select Player to Evaluate",
         [""] + available_players,
         on_change=reset_sliders,
-        key="player_select"  # The selected value is stored in st.session_state.player_select
+        key="player_select"
     )
 else:
     st.text_input("Player Name", key="player_select")
 
-# The form now only contains the sliders and the submit button.
+nome = st.session_state.player_select
+
+if nome:
+    player_info = get_player_info(df, nome)
+    st.caption(
+        f"Age: {player_info['idade']} | Ht & Ws: {player_info['alt_ws']} | Position: {player_info['posicao']} | Team: {player_info['equipa']}"
+    )
+
 with st.form("form_jogador"):
-    # We get the player name from session_state, which was set by the selectbox above.
-    nome = st.session_state.player_select
-
-    if df is not None and nome:
-        player_info = get_player_info(df, nome)
-        st.caption(
-            f"Age: {player_info['idade']} | Ht & Ws: {player_info['alt_ws']} | Position: {player_info['posicao']} | Team: {player_info['equipa']}")
-
     scores = {}
     cols = st.columns(3)
     for i, category in enumerate(EVAL_CATEGORIES):
         with cols[i % 3]:
-            # The key for each slider now uses the session_state value
             scores[category] = st.slider(
                 f"{category}",
                 0, 10, key=f"slider_{category}"
             )
 
-    st.markdown("---")
+    # Compute weighted average and tier immediately after sliders
     media_preview = calculate_weighted_average(scores)
     tier_preview = get_tier(media_preview)
 
-    submit_col, preview_col = st.columns([1, 2])
-    with submit_col:
+    # Display real-time preview
+    st.markdown("---")
+    col1, col2 = st.columns([1, 2])
+    with col1:
         submitted = st.form_submit_button("➕ Add to Big Board", type="primary", use_container_width=True)
-    with preview_col:
+    with col2:
         st.metric("Score Preview", f"{media_preview}/10", delta=tier_preview)
 
     if submitted and nome:
+        # Existing submission logic remains unchanged
         if nome in st.session_state.big_board['Name'].values:
-            st.error(f"⚠️ {nome} is already on the Big Board!")
+            player_info = get_player_info(df, nome)
+            replace_player_data = {
+                "Name": nome,
+                "Age": player_info['idade'],
+                "Height": player_info['alt_ws'],
+                "Position": player_info['posicao'],
+                "College/Team": player_info['equipa'],
+                "Média Ponderada": media_preview,
+                "Tier": tier_preview,
+                **scores
+            }
+            st.session_state.big_board.loc[st.session_state.big_board['Name'] == nome, replace_player_data.keys()] = replace_player_data.values()
+            save_big_board_to_file(st.session_state.big_board)
+            st.success(f"✅ {nome} stats updated in Big Board!")
+            st.rerun()
         else:
             player_info = get_player_info(df, nome)
             new_player_data = {
