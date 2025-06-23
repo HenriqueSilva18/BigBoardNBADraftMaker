@@ -500,9 +500,11 @@ tier_preview = get_tier(media_preview)
 # Display real-time preview with comparison if it's an existing player
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("New Score Preview", f"{media_preview}/10", delta=tier_preview)
+    st.metric("Score Preview", f"{media_preview}/10", delta=tier_preview)
 
 if is_existing_player and existing_player is not None:
+    with col1:
+        st.metric("New Score Preview", f"{media_preview}/10", delta=tier_preview)
     with col2:
         current_score = existing_player['Média Ponderada']
         score_change = media_preview - current_score
