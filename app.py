@@ -1,12 +1,11 @@
 import io
-
+import json
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.patheffects as path_effects
 import os
-from io import BytesIO
 
 # --- Configuration and Setup ---
 st.set_page_config(page_title="NBA Draft Big Board", layout="wide", page_icon="🏀")
@@ -29,6 +28,57 @@ WEIGHTS = {
     "Basketball IQ": 1/9,
     "Intangibles": 1/9
 }
+
+
+REQUIRED_COLS = (
+    ["Name", "Age", "Measurements", "Position", "College/Team",
+     "Tier", "Média Ponderada"] + EVAL_CATEGORIES
+)
+
+def load_big_board_from_json(fileobj=None, filename="big_board_save.json"):
+    """
+    Lê exclusivamente ficheiros JSON (orient='records').
+    Devolve DataFrame limpo ou None.
+    """
+    try:
+        # -------------------------------------------------- ler bytes
+        if fileobj is not None:                 # via upload
+            raw = fileobj.read()
+        elif os.path.exists(filename):          # em disco
+            with open(filename, "rb") as f:
+                raw = f.read()
+        else:
+            return None
+
+        # -------------------------------------------------- json → list[dict]
+        data = json.loads(raw.decode("utf-8"))
+        if isinstance(data, dict):              # salvaguarda
+            data = [data]
+
+        df = pd.DataFrame(data)
+
+        # -------------------------------------------------- garantir colunas
+        for col in REQUIRED_COLS:
+            if col not in df.columns:
+                df[col] = 5 if col in EVAL_CATEGORIES else "N/A"
+
+        # coercionar tipos
+        df[EVAL_CATEGORIES] = df[EVAL_CATEGORIES].apply(
+            pd.to_numeric, errors="coerce").fillna(5).astype(int)
+        df["Média Ponderada"] = pd.to_numeric(
+            df["Média Ponderada"], errors="coerce").fillna(0).round(2)
+
+        # remover duplicados
+        df = df.drop_duplicates(subset="Name", keep="first").reset_index(drop=True)
+
+        # remover colunas repetidas caso existam
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        return df
+
+    except Exception as e:
+        st.error(f"Error loading Big Board: {e}")
+        return None
 
 
 # --- Data Loading and Processing ---
@@ -157,10 +207,10 @@ def apply_highlighting(df_display, df_numeric, cols_max, cols_min):
 
 def get_tier(score):
     """Assign a tier based on the weighted score."""
-    if score >= 9.0: return "Tier 1 - Superstar"
-    if score >= 8.0: return "Tier 2 - Potential All-NBA"
-    if score >= 7.0: return "Tier 3 - Potential All-Star"
-    if score >= 6.0: return "Tier 4 - Starter"
+    if score >= 8.5: return "Tier 1 - Superstar"
+    if score >= 8  : return "Tier 2 - Potential All-NBA"
+    if score >= 7: return "Tier 3 - Potential All-Star"
+    if score >= 6: return "Tier 4 - Starter"
     return "Tier 5 - Role Player"
 
 
@@ -207,7 +257,7 @@ def create_overlaid_radar_chart(players_data, figsize):
 #only save rank number, the name and the position
 def save_big_board_to_txt(big_board, filename="big_board_nba_draft_2025.txt"):
     if big_board.empty:
-        return "A Big Board está vazia."  # Retorna uma string
+        return "Big Board is empty. Nothing to save."  # Retorna uma string
 
     linhas = ["🏀 NBA Draft Big Board 2025 Rankings\n"]
     for index, row in big_board.iterrows():
@@ -221,13 +271,39 @@ def save_big_board_to_txt(big_board, filename="big_board_nba_draft_2025.txt"):
 
 # --- File Operations ---
 def save_big_board_to_file(big_board, filename="big_board_save.json"):
-    """Save the big board DataFrame to a JSON file."""
+    """
+    Guarda o DataFrame da Big Board em JSON (orient='records').
+    Garante que não há colunas duplicadas.
+    """
     try:
-        big_board.to_json(filename, orient='records', indent=2)
+        # remove eventuais colunas duplicadas mantendo a 1.ª ocorrência
+        big_board = big_board.loc[:, ~big_board.columns.duplicated()]
+
+        big_board.to_json(filename, orient="records", indent=2)
         return True
     except Exception as e:
         st.error(f"Error saving file: {e}")
         return False
+
+
+# --- Main App ---
+st.title("🏀 NBA Draft Big Board 2025")
+
+df = load_data()
+
+# --- Initialize Session State ---
+if "big_board" not in st.session_state:
+    columns = [
+                  "Name", "Age", "Measurements", "Position", "College/Team", "Tier", "Média Ponderada"
+              ] + EVAL_CATEGORIES
+    st.session_state.big_board = pd.DataFrame(columns=columns)
+
+for cat in EVAL_CATEGORIES:
+    if f"slider_{cat}" not in st.session_state:
+        st.session_state[f"slider_{cat}"] = 5
+
+if 'player_select' not in st.session_state:
+    st.session_state.player_select = ""
 
 
 def load_big_board_from_file(filename="big_board_save.json"):
@@ -245,24 +321,6 @@ def load_big_board_from_file(filename="big_board_save.json"):
         return None
 
 
-# --- Main App ---
-st.title("🏀 NBA Draft Big Board 2025")
-
-df = load_data()
-
-# --- Initialize Session State ---
-if "big_board" not in st.session_state:
-    columns = [
-                  "Name", "Age", "Height", "Position", "College/Team", "Tier", "Média Ponderada"
-              ] + EVAL_CATEGORIES
-    st.session_state.big_board = pd.DataFrame(columns=columns)
-
-for cat in EVAL_CATEGORIES:
-    if f"slider_{cat}" not in st.session_state:
-        st.session_state[f"slider_{cat}"] = 5
-
-if 'player_select' not in st.session_state:
-    st.session_state.player_select = ""
 
 if "auto_loaded" not in st.session_state:
     saved_board = load_big_board_from_file()
@@ -278,11 +336,18 @@ with st.sidebar:
     # A lógica de download só deve aparecer se a big board não estiver vazia
     if 'big_board' in st.session_state and not st.session_state.big_board.empty:
 
+        json_bytes = (
+            st.session_state.big_board
+            .loc[:, ~st.session_state.big_board.columns.duplicated()]  # garante colunas únicas
+            .to_json(orient="records", indent=2)  # DataFrame -> str (JSON)
+            .encode("utf-8")  # str -> bytes
+        )
+
         # OPÇÃO 1: DOWNLOAD DO BACKUP COMPLETO (JSON)
         # Este ficheiro serve para poder carregar o estado da board mais tarde.
         st.download_button(
             label="💾 Download Full Backup (JSON)",
-            data=st.session_state.big_board.to_json(orient='records', indent=2).encode('utf-8'),
+            data=json_bytes,
             file_name="big_board_backup_2025.json",
             mime="application/json",
             help="Saves the entire Big Board as a JSON file, that can be reuploaded.",
@@ -300,25 +365,27 @@ with st.sidebar:
         )
 
     else:
-        st.info("A Big Board está vazia. Adicione jogadores para ativar os downloads.")
+        st.info("Add your first player to enable download options.")
 
-    # LÓGICA DE UPLOAD (CARREGAR)
-    uploaded_file = st.file_uploader("📁 Load Full Backup (JSON)", type=['json'])
-    if uploaded_file:
-        try:
-            loaded_board = pd.read_json(uploaded_file)
-            # Lógica para garantir que todas as colunas existem no ficheiro carregado
-            if 'big_board' in st.session_state:
-                for col in st.session_state.big_board.columns:
-                    if col not in loaded_board.columns:
-                        # Assumindo que EVAL_CATEGORIES é uma lista/set das suas categorias
-                        loaded_board[col] = 5 if col in EVAL_CATEGORIES else 'N/A'
+    # --- UPLOAD / CARREGAR BIG BOARD -------------------------------------------
+    uploaded_file = st.file_uploader(
+        "📁 Load Backup (JSON apenas)", type=["json"]
+    )
 
+    if uploaded_file is not None:
+        loaded_board = load_big_board_from_json(fileobj=uploaded_file)
+
+        if loaded_board is not None and not loaded_board.empty:
             st.session_state.big_board = loaded_board
-            st.success("Big Board loaded successfully!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error loading file: {e}")
+            st.session_state["board_loaded_now"] = True  # flag!
+            save_big_board_to_file(st.session_state.big_board)
+        else:
+            st.error("❌ Could not read the uploaded JSON file.")
+
+    # Mostrar mensagem de sucesso exactamente 1 vez
+    if st.session_state.get("board_loaded_now", False):
+        st.success("✅ Big Board loaded successfully!")
+        st.session_state["board_loaded_now"] = False  # limpa a flag
 
     st.markdown("---")
     st.subheader("📊 Evaluation Weights")
@@ -335,21 +402,73 @@ def reset_sliders():
         st.session_state[f"slider_{category}"] = 5
 
 
-# --- Add Player Section (CORRECTED) ---
-st.subheader("➕ Add Player")
+# Replace the "Add Player Section" with this improved version:
 
+# --- Add/Modify Player Section ---
+st.subheader("➕✏️ Add/Edit Player To Board")
+
+# Initialize player tracking if not exists
+if 'last_selected_player' not in st.session_state:
+    st.session_state['last_selected_player'] = ""
+
+# Check if we need to reset sliders (this happens BEFORE creating the widgets)
+if st.session_state.get('reset_sliders_flag', False):
+    for category in EVAL_CATEGORIES:
+        st.session_state[f"slider_{category}"] = 5
+    st.session_state['reset_sliders_flag'] = False
+
+# Handle clear selection trigger
+if st.session_state.get('clear_selection', False):
+    st.session_state.player_select = ""
+    st.session_state['last_selected_player'] = ""
+    for category in EVAL_CATEGORIES:
+        st.session_state[f"slider_{category}"] = 5
+    st.session_state.clear_selection = False
+
+# Player selection
 if df is not None:
     available_players = sorted(df['name'].dropna().unique())
-    st.selectbox(
+    selected_player = st.selectbox(
         "Select Player to Evaluate",
         [""] + available_players,
-        on_change=reset_sliders,
         key="player_select"
     )
 else:
-    st.text_input("Player Name", key="player_select")
+    selected_player = st.text_input("Player Name", key="player_select")
 
-nome = st.session_state.player_select
+nome = selected_player
+
+# Check if player is already in big board and show appropriate message
+is_existing_player = False
+existing_player = None
+
+if nome and not st.session_state.big_board.empty:
+    if nome in st.session_state.big_board['Name'].values:
+        is_existing_player = True
+        # Get existing scores from big board
+        existing_player = st.session_state.big_board[st.session_state.big_board['Name'] == nome].iloc[0]
+
+        # Load existing scores into sliders ONLY when player changes (not on every rerun)
+        if st.session_state.get('last_selected_player', '') != nome:
+            for category in EVAL_CATEGORIES:
+                if category in existing_player:
+                    st.session_state[f"slider_{category}"] = existing_player[category]
+            st.session_state['last_selected_player'] = nome
+
+        # Show modification warning/info
+        st.warning(
+            f"⚠️ **{nome}** is already in your Big Board. Modify the scores below and click 'Update Player' to save changes.")
+
+        # Show current ranking
+        current_board = st.session_state.big_board.sort_values(by="Média Ponderada", ascending=False).reset_index(
+            drop=True)
+        current_rank = current_board[current_board['Name'] == nome].index[0] + 1
+        current_score = existing_player['Média Ponderada']
+        st.info(f"📊 Current Ranking: **#{current_rank}** | Current Score: **{current_score:.2f}/10**")
+else:
+    # If no player selected or player not in board, reset the tracking
+    if st.session_state.get('last_selected_player', '') != nome:
+        st.session_state['last_selected_player'] = nome
 
 if nome:
     player_info = get_player_info(df, nome)
@@ -357,63 +476,104 @@ if nome:
         f"Age: {player_info['idade']} | Ht & Ws: {player_info['alt_ws']} | Position: {player_info['posicao']} | Team: {player_info['equipa']}"
     )
 
-with st.form("form_jogador"):
-    scores = {}
-    cols = st.columns(3)
-    for i, category in enumerate(EVAL_CATEGORIES):
-        with cols[i % 3]:
-            scores[category] = st.slider(
-                f"{category}",
-                0, 10, key=f"slider_{category}"
-            )
+# Create the sliders OUTSIDE the form for real-time updates
+st.markdown("**Evaluation Categories:**")
+scores = {}
+cols = st.columns(3)
+for i, category in enumerate(EVAL_CATEGORIES):
+    with cols[i % 3]:
+        scores[category] = st.slider(
+            f"{category}",
+            0, 10,
+            value=st.session_state.get(f"slider_{category}", 5),
+            key=f"slider_{category}"
+        )
 
-    # Compute weighted average and tier immediately after sliders
-    media_preview = calculate_weighted_average(scores)
-    tier_preview = get_tier(media_preview)
+# Real-time preview calculation (now updates automatically with slider changes)
+media_preview = calculate_weighted_average(scores)
+tier_preview = get_tier(media_preview)
 
-    # Display real-time preview
-    st.markdown("---")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        submitted = st.form_submit_button("➕ Add to Big Board", type="primary", use_container_width=True)
+# Display real-time preview with comparison if it's an existing player
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("New Score Preview", f"{media_preview}/10", delta=tier_preview)
+
+if is_existing_player and existing_player is not None:
     with col2:
-        st.metric("Score Preview", f"{media_preview}/10", delta=tier_preview)
-
-    if submitted and nome:
-        # Existing submission logic remains unchanged
-        if nome in st.session_state.big_board['Name'].values:
-            player_info = get_player_info(df, nome)
-            replace_player_data = {
-                "Name": nome,
-                "Age": player_info['idade'],
-                "Height": player_info['alt_ws'],
-                "Position": player_info['posicao'],
-                "College/Team": player_info['equipa'],
-                "Média Ponderada": media_preview,
-                "Tier": tier_preview,
-                **scores
-            }
-            st.session_state.big_board.loc[st.session_state.big_board['Name'] == nome, replace_player_data.keys()] = replace_player_data.values()
-            save_big_board_to_file(st.session_state.big_board)
-            st.success(f"✅ {nome} stats updated in Big Board!")
-            st.rerun()
+        current_score = existing_player['Média Ponderada']
+        score_change = media_preview - current_score
+        if score_change > 0:
+            delta_text = f"+{score_change:.2f}"
+        elif score_change < 0:
+            delta_text = f"{score_change:.2f}"
         else:
-            player_info = get_player_info(df, nome)
-            new_player_data = {
-                "Name": nome,
-                "Age": player_info['idade'],
-                "Height": player_info['alt_ws'],
-                "Position": player_info['posicao'],
-                "College/Team": player_info['equipa'],
-                "Média Ponderada": media_preview,
-                "Tier": tier_preview,
-                **scores
-            }
-            new_player_df = pd.DataFrame([new_player_data])
-            st.session_state.big_board = pd.concat([st.session_state.big_board, new_player_df], ignore_index=True)
-            save_big_board_to_file(st.session_state.big_board)
-            st.success(f"✅ {nome} added to Big Board!")
-            st.rerun()
+            delta_text = "No change"
+
+        st.metric("Current Score", f"{current_score:.2f}/10", delta=delta_text)
+
+# Form with dynamic button text
+with st.form("form_jogador"):
+    if is_existing_player:
+        button_text = f"✏️ Update {nome}"
+        button_help = f"Update {nome}'s evaluation scores in the Big Board"
+    else:
+        button_text = "➕ Add to Big Board"
+        button_help = "Add this player to your Big Board"
+
+    # Additional options for existing players
+    if is_existing_player:
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            submitted = st.form_submit_button(button_text, type="primary", help=button_help)
+        with col2:
+            remove_player = st.form_submit_button("🗑️ Remove", type="secondary", help=f"Remove {nome} from Big Board")
+    else:
+        submitted = st.form_submit_button(button_text, type="primary", use_container_width=True, help=button_help)
+        remove_player = False
+
+# Handle form submission
+if submitted and nome:
+    player_info = get_player_info(df, nome)
+    player_data = {
+        "Name": nome,
+        "Age": player_info['idade'],
+        "Measurements": player_info['alt_ws'],
+        "Position": player_info['posicao'],
+        "College/Team": player_info['equipa'],
+        "Média Ponderada": media_preview,
+        "Tier": tier_preview,
+        **scores
+    }
+
+    if is_existing_player:
+        # Update existing player
+        st.session_state.big_board.loc[
+            st.session_state.big_board['Name'] == nome, player_data.keys()
+        ] = list(player_data.values())
+        save_big_board_to_file(st.session_state.big_board)
+        st.success(f"✅ {nome}'s evaluation has been updated!")
+    else:
+        # Add new player
+        new_player_df = pd.DataFrame([player_data])
+        st.session_state.big_board = pd.concat([st.session_state.big_board, new_player_df], ignore_index=True)
+        save_big_board_to_file(st.session_state.big_board)
+        st.success(f"✅ {nome} has been added to the Big Board!")
+
+    # Clear player selection and reset sliders using the flag
+    st.session_state['last_selected_player'] = ""
+    st.session_state['reset_sliders_flag'] = True
+    st.session_state.clear_selection = True
+    st.rerun()
+
+# Handle player removal
+if remove_player and nome:
+    st.session_state.big_board = st.session_state.big_board[st.session_state.big_board['Name'] != nome]
+    save_big_board_to_file(st.session_state.big_board)
+    st.success(f"✅ {nome} has been removed from the Big Board!")
+
+    # Set flag to reset sliders on next run
+    st.session_state['reset_sliders_flag'] = True
+    st.rerun()
 
 # --- Big Board Rankings Display ---
 st.markdown("---")
@@ -426,7 +586,7 @@ if not st.session_state.big_board.empty:
     display_board.index = display_board.index + 1
     display_board.index.name = "Rank"
 
-    display_cols = ["Name", "Tier", "Média Ponderada", "Age", "Height", "Position", "College/Team"] + EVAL_CATEGORIES
+    display_cols = ["Name", "Tier", "Média Ponderada", "Age", "Measurements", "Position", "College/Team"] + EVAL_CATEGORIES
     display_board = display_board[display_cols]
 
     st.info("💡 You can double-click a 'Tier' cell to override it.")
