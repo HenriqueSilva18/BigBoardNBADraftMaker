@@ -261,12 +261,30 @@ def save_big_board_to_txt(big_board, filename="big_board_nba_draft_2025.txt"):
     if big_board.empty:
         return "Big Board is empty. Nothing to save."  # Retorna uma string
 
-    linhas = ["🏀 NBA Draft Big Board 2025 Rankings\n"]
-    for index, row in big_board.iterrows():
-        rank = index + 1
-        nome = row.get('Name', 'N/A')
-        posicao = row.get('Position', 'N/A')
-        linhas.append(f"{rank}. {nome} - {posicao}")
+    linhas = []
+    linhas.append("🏀 NBA Draft Big Board 2025 Rankings\n")
+
+    #sort the big board by "Média Ponderada" in descending order
+    big_board = big_board.sort_values(by="Média Ponderada", ascending=False).reset_index(drop=True)
+
+    # Calcular o comprimento máximo dos nomes para alinhar
+    max_nome_len = big_board['Name'].apply(len).max()
+
+    for tier in big_board['Tier'].unique():
+        linhas.append(f"\n\t{tier}\n")
+        tier_players = big_board[big_board['Tier'] == tier]
+        if not tier_players.empty:
+            for index, row in tier_players.iterrows():
+                rank = index + 1
+                nome = row.get('Name',   'N/A')
+                posicao = row.get('Position', 'N/A')
+                score = row.get('Média Ponderada', 'N/A')
+                # Alinha o nome com espaços à direita
+                nome_formatado = nome.ljust(max_nome_len)
+                posicao_formatada = posicao.ljust(10)  # ou ajusta conforme necessário
+                linhas.append(f"{rank:2}. {nome_formatado} - {posicao_formatada} ({score:.2f})")
+        else:
+            linhas.append("No players in this tier.")
 
     # O passo mais importante: retorna a string completa
     return "\n".join(linhas)
