@@ -1,4 +1,6 @@
 pandas
 streamlit
+streamlit-sortables
 matplotlib
 numpy
+pillow

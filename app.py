@@ -1,793 +1,676 @@
-import io
-import json
-import streamlit as st
+from html import escape
+from textwrap import dedent
+
 import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib.patheffects as path_effects
-import os
+import streamlit as st
+from streamlit_sortables import sort_items
 
-# --- Configuration and Setup ---
-st.set_page_config(page_title="NBA Draft Big Board", layout="wide", page_icon="🏀")
-
-# --- Constants for new evaluation categories ---
-EVAL_CATEGORIES = [
-    "Athleticism", "Dribbling", "Shooting", "Perimeter Defense", "Passing",
-    "Scoring", "Interior Defense", "Basketball IQ", "Intangibles"
-]
-
-# Define weights for the new categories
-WEIGHTS = {
-    "Athleticism": 1/8,
-    "Scoring": 1/8,
-    "Shooting": 1/8,
-    "Dribbling": 1/8,
-    "Passing": 1/8,
-    "Perimeter Defense": 1/16,
-    "Interior Defense": 1/16,
-    "Basketball IQ": 1/8,
-    "Intangibles": 1/8
-}
-
-
-REQUIRED_COLS = (
-    ["Name", "Age", "Measurements", "Position", "College/Team",
-     "Tier", "Média Ponderada"] + EVAL_CATEGORIES
+from big_board_app.config import (
+    APP_SUBTITLE,
+    APP_TITLE,
+    BOARD_COLUMNS,
+    EVAL_CATEGORIES,
+    RANK_COLUMN,
+    SCORE_COLUMN,
+    WEIGHTS,
+)
+from big_board_app.data import get_player_info, get_player_stats, load_prospect_data
+from big_board_app.export_image import board_to_jpg_bytes
+from big_board_app.scoring import calculate_weighted_average, get_tier
+from big_board_app.storage import (
+    big_board_to_json_bytes,
+    create_empty_board,
+    load_big_board_from_json,
+    normalize_big_board,
+    order_big_board,
+    save_big_board_to_file,
+    save_big_board_to_txt,
+)
+from big_board_app.theme import inject_theme
+from big_board_app.visuals import (
+    apply_extreme_highlighting,
+    build_eval_table,
+    build_stats_table,
+    create_overlaid_radar_chart,
+    figure_to_svg,
 )
 
-def load_big_board_from_json(fileobj=None, filename="big_board_save.json"):
-    """
-    Lê exclusivamente ficheiros JSON (orient='records').
-    Devolve DataFrame limpo ou None.
-    """
+
+st.set_page_config(page_title=APP_TITLE, layout="wide", page_icon="🏀")
+inject_theme()
+
+
+@st.cache_data(show_spinner=False)
+def cached_prospect_data():
+    return load_prospect_data()
+
+
+def safe_text(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "N/A"
+    return escape(str(value))
+
+
+def html(content):
+    st.markdown(dedent(content).strip(), unsafe_allow_html=True)
+
+
+def get_board():
+    return normalize_big_board(st.session_state.big_board)
+
+
+def set_board(board):
+    st.session_state.big_board = normalize_big_board(board)
+
+
+def initialize_state():
+    if "big_board" not in st.session_state:
+        st.session_state.big_board = create_empty_board()
+
+    for category in EVAL_CATEGORIES:
+        st.session_state.setdefault(f"slider_{category}", 5)
+
+    st.session_state.setdefault("player_select", "")
+    st.session_state.setdefault("last_selected_player", "")
+    st.session_state.setdefault("auto_loaded", False)
+    st.session_state.setdefault("last_uploaded_board", "")
+
+
+def auto_load_saved_board():
+    if st.session_state.auto_loaded:
+        return
+
     try:
-        # -------------------------------------------------- ler bytes
-        if fileobj is not None:                 # via upload
-            raw = fileobj.read()
-        elif os.path.exists(filename):          # em disco
-            with open(filename, "rb") as f:
-                raw = f.read()
-        else:
-            return None
+        saved_board = load_big_board_from_json()
+    except Exception as error:
+        st.warning(f"Saved board could not be loaded: {error}")
+        saved_board = None
 
-        # -------------------------------------------------- json → list[dict]
-        data = json.loads(raw.decode("utf-8"))
-        if isinstance(data, dict):              # salvaguarda
-            data = [data]
-
-        df = pd.DataFrame(data)
-
-        # -------------------------------------------------- garantir colunas
-        for col in REQUIRED_COLS:
-            if col not in df.columns:
-                df[col] = 5 if col in EVAL_CATEGORIES else "N/A"
-
-        # coercionar tipos
-        df[EVAL_CATEGORIES] = df[EVAL_CATEGORIES].apply(
-            pd.to_numeric, errors="coerce").fillna(5).astype(int)
-        df["Média Ponderada"] = pd.to_numeric(
-            df["Média Ponderada"], errors="coerce").fillna(0).round(2)
-
-        # remover duplicados
-        df = df.drop_duplicates(subset="Name", keep="first").reset_index(drop=True)
-
-        # remover colunas repetidas caso existam
-        df = df.loc[:, ~df.columns.duplicated()]
-
-        return df
-
-    except Exception as e:
-        st.error(f"Error loading Big Board: {e}")
-        return None
-
-
-# --- Data Loading and Processing ---
-def load_data():
-    try:
-        # Lista de colunas padronizadas (na ordem desejada)
-        columns = [
-            'name','team','year','position','measurements','weight','mock_draft','big_board','age_at_draft','birthdate',
-            'nation','hometown','high_school','espn_100','strengths','weaknesses','max_vert','lane_agil','shuttle','3_4sprint',
-            'reach','wingspan','games','minutes_per_game','fgm_fga','fg_pct','3pm_3pa','3p_pct','ftm_fta','ft_pct','rebounds_pg',
-            'assists_pg','blocks_pg','steals_pg','turnovers_pg','personal_fouls_pg','points_pg','games_per36','minutes_per36',
-            'fgm_fga_per36','fg_pct_per36','3pm_3pa_per36','3p_pct_per36','ftm_fta_per36','ft_pct_per36','rebounds_per36',
-            'assists_per36','blocks_per36','steals_per36','turnovers_per36','personal_fouls_per36','points_per36','ts_per',
-            'efg_per','3pa_rate','fta_rate','nba_3p_per','usg_per','ast_per_usg','ast_per_to','per','ows_per_40','dws_per_40',
-            'ws_per_40','ortg','drtg','obpm','dbpm','bpm'
-        ]
-
-        desired_collums = [
-            'name', 'team', 'year', 'position','measurements', 'age_at_draft',
-            'nation', 'wingspan', 'games','minutes_per_game', '3p_pct', 'ft_pct', 'rebounds_per36', 'assists_per36', 'blocks_per36',
-            'steals_per36', 'turnovers_per36','points_per36', 'ts_per', '3pa_rate', 'fta_rate', 'usg_per', 'ast_per_usg', 'ast_per_to', 'obpm', 'dbpm', 'bpm'
-        ]
-
-        # Tenta ler o CSV já com o cabeçalho certo
-        df = pd.read_csv('nba_prospects_2025_stats.csv')
-
-        # (Se o arquivo não tiver header, use:)
-        # df = pd.read_csv('players_ncaa_2025.csv', header=None, names=columns)
-
-        # Caso o CSV tenha colunas extras ou outra ordem, filtra só as desejadas disponíveis
-        available_cols = [col for col in columns if col in df.columns]
-        df = df[available_cols]
-
-        #colocar apenas desired_columns
-        df = df[desired_collums]
-
-        return df
-
-    except FileNotFoundError as e:
-        print(f"File not found: {e}")
-        return None
-    except Exception as e:
-        print(f"Error loading data: {e}")
-        return None
-
-
-# --- Player Information and Stats Retrieval ---
-def get_player_info(df, player_name):
-    """Get basic player information."""
-    if df is None or player_name not in df['name'].values:
-        return {"idade": "N/A", "altura": "N/A", "posicao": "N/A", "equipa": "N/A"}
-    player_data = df[df['name'] == player_name].iloc[0]
-    return {
-        "idade": player_data.get('age_at_draft', 'N/A'),
-        "alt_ws": player_data.get('measurements', 'N/A'),
-        "posicao": player_data.get('position', 'N/A'),
-        "equipa": player_data.get('team', 'N/A')
-    }
-
-
-def get_player_stats(df, player_name):
-    """Get detailed player statistics for comparison."""
-    if df is None or player_name not in df['name'].values:
-        return {}
-    player_data = df[df['name'] == player_name].iloc[0]
-
-    desired_collums = [
-        'name', 'team', 'year', 'position', 'measurements', 'age_at_draft',
-        'nation', 'wingspan', 'games','minutes_per_game', '3p_pct', 'ft_pct', 'rebounds_per36', 'assists_per36', 'blocks_per36',
-        'steals_per36', 'points_per36', 'ts_per', '3pa_rate', 'fta_rate', 'usg_per', 'ast_per_usg', 'ast_per_to',
-        'obpm', 'dbpm', 'bpm'
-    ]
-
-    stats_columns = ['games', 'points_per36', 'assists_per36', 'rebounds_per36', 'steals_per36', 'blocks_per36','turnovers_per36', 'obpm', 'dbpm', 'bpm',
-                     'usg_per', 'ts_per', 'ast_per_to', '3p_pct', '3pa_rate', 'fta_rate']
-    stats = {col: player_data.get(col, 0) for col in stats_columns}
-    return stats
-
-
-# --- Core Logic for Big Board ---
-def calculate_weighted_average(scores):
-    """Calculate the weighted average score based on new categories."""
-    total_score = sum(scores[cat] * WEIGHTS[cat] for cat in EVAL_CATEGORIES)
-    return round(total_score, 2)
-
-def apply_highlighting_list(df_display, df_numeric):
-    styles = pd.DataFrame('', index=df_display.index, columns=df_display.columns)
-    for col in df_numeric.columns:
-        if not df_numeric[col].dropna().empty:
-            max_val = df_numeric[col].max()
-            min_val = df_numeric[col].min()
-            for index in df_numeric.index:
-                if pd.notna(df_numeric.loc[index, col]):
-                    if df_numeric.loc[index, col] == max_val and index != 'Name':
-                        styles.loc[index, col] = 'background-color: #28a745'
-                    elif df_numeric.loc[index, col] == min_val:
-                        styles.loc[index, col] = 'background-color: #dc3545'
-    return styles
-
- # Function to apply styles based on numeric_df
-def apply_highlighting(df_display, df_numeric, cols_max, cols_min):
-    styles = pd.DataFrame('', index=df_display.index, columns=df_display.columns)
-
-    # Highlight max (green) and min (red) for columns_to_highlight
-    for col in cols_max:
-        if col in df_numeric.columns:
-            max_idx = df_numeric[col].idxmax()
-            min_idx = df_numeric[col].idxmin()
-            if pd.notnull(max_idx):
-                styles.loc[max_idx, col] = 'background-color: #28a745'
-            if pd.notnull(min_idx):
-                styles.loc[min_idx, col] = 'background-color: #dc3545'
-
-    # Highlight min (green) and max (red) for TO/36 and BPM
-    for col in cols_min:
-        if col in df_numeric.columns:
-            max_idx = df_numeric[col].idxmax()
-            min_idx = df_numeric[col].idxmin()
-            if pd.notnull(max_idx):
-                styles.loc[max_idx, col] = 'background-color: #dc3545'
-            if pd.notnull(min_idx):
-                styles.loc[min_idx, col] = 'background-color: #28a745'
-
-    return styles
-
-
-def get_tier(score):
-    """Assign a tier based on the weighted score."""
-    if score >= 9.5: return "Tier 0 - All-Time Talent"
-    if score >= 8.5: return "Tier 1 - Superstar"
-    if score >= 7.5  : return "Tier 2 - Potential All-NBA"
-    if score >= 6.5: return "Tier 3 - Potential All-Star"
-    if score >= 5: return "Tier 4 - Starter"
-    return "Tier 5 – Fringe NBA / G-League"
-
-
-# --- Visualization ---
-def create_overlaid_radar_chart(players_data, figsize):
-    """Cria um gráfico de radar sobreposto e moderno para comparação de jogadores."""
-    if players_data.empty:
-        return None
-
-    categories = EVAL_CATEGORIES
-    num_vars = len(categories)
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    angles += angles[:1]
-    fig, ax = plt.subplots(figsize=figsize, subplot_kw=dict(projection='polar'))
-    fig.patch.set_alpha(0.0)
-    ax.patch.set_alpha(0.0)
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-    for i, (idx, player) in enumerate(players_data.iterrows()):
-        values = player[categories].tolist()
-        values += values[:1]
-        color = colors[i % len(colors)]
-        ax.plot(angles, values, 'o-', linewidth=2, label=player['Name'], color=color)
-        ax.fill(angles, values, alpha=0.2, color=color)
-    ax.set_yticklabels([])
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels([])  # Remove os labels padrão
-
-    # Adiciona os labels manualmente com maior distância
-    outline_effect = [path_effects.Stroke(linewidth=1.5, foreground='black'), path_effects.Normal()]
-    for angle, category in zip(angles[:-1], categories):
-        ax.text(angle, 11.7, category, horizontalalignment='center', verticalalignment='center',
-                size=10, color='white', path_effects=outline_effect, zorder=10)
-
-    ax.set_ylim(0, 10)
-    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), labelcolor='black', fontsize=10, markerscale=0.8,
-              handletextpad=0.5, labelspacing=0.8)
-    ax.grid(color='#CCCCCC', linestyle='--', linewidth=0.5)
-
-    spine = ax.spines['polar']
-
-    spine.set_color('#777777')
-    spine.set_zorder(0.5)
-    return fig
-
-#only save rank number, the name and the position
-def save_big_board_to_txt(big_board, filename="big_board_nba_draft_2025.txt"):
-    if big_board.empty:
-        return "Big Board is empty. Nothing to save."  # Retorna uma string
-
-    linhas = []
-    linhas.append("🏀 NBA Draft Big Board 2025 Rankings\n")
-
-    #sort the big board by "Média Ponderada" in descending order
-    big_board = big_board.sort_values(by="Média Ponderada", ascending=False).reset_index(drop=True)
-
-    # Calcular o comprimento máximo dos nomes para alinhar
-    max_nome_len = big_board['Name'].apply(len).max()
-
-    for tier in big_board['Tier'].unique():
-        linhas.append(f"\n\t{tier}\n")
-        tier_players = big_board[big_board['Tier'] == tier]
-        if not tier_players.empty:
-            for index, row in tier_players.iterrows():
-                rank = index + 1
-                nome = row.get('Name',   'N/A')
-                posicao = row.get('Position', 'N/A')
-                score = row.get('Média Ponderada', 'N/A')
-                # Alinha o nome com espaços à direita
-                nome_formatado = nome.ljust(max_nome_len)
-                posicao_formatada = posicao.ljust(10)  # ou ajusta conforme necessário
-                linhas.append(f"{rank:2}. {nome_formatado} - {posicao_formatada} ({score:.2f})")
-        else:
-            linhas.append("No players in this tier.")
-
-    # O passo mais importante: retorna a string completa
-    return "\n".join(linhas)
-
-# --- File Operations ---
-def save_big_board_to_file(big_board, filename="big_board_save.json"):
-    """
-    Guarda o DataFrame da Big Board em JSON (orient='records').
-    Garante que não há colunas duplicadas.
-    """
-    try:
-        # remove eventuais colunas duplicadas mantendo a 1.ª ocorrência
-        big_board = big_board.loc[:, ~big_board.columns.duplicated()]
-
-        big_board.to_json(filename, orient="records", indent=2)
-        return True
-    except Exception as e:
-        st.error(f"Error saving file: {e}")
-        return False
-
-
-# --- Main App ---
-st.title("🏀 NBA Draft Big Board 2025")
-
-df = load_data()
-
-# --- Initialize Session State ---
-if "big_board" not in st.session_state:
-    columns = [
-                  "Name", "Age", "Measurements", "Position", "College/Team", "Tier", "Média Ponderada"
-              ] + EVAL_CATEGORIES
-    st.session_state.big_board = pd.DataFrame(columns=columns)
-
-for cat in EVAL_CATEGORIES:
-    if f"slider_{cat}" not in st.session_state:
-        st.session_state[f"slider_{cat}"] = 5
-
-if 'player_select' not in st.session_state:
-    st.session_state.player_select = ""
-
-
-def load_big_board_from_file(filename="big_board_save.json"):
-    """Load the big board from a JSON file, ensuring all new columns exist."""
-    try:
-        if os.path.exists(filename):
-            board = pd.read_json(filename, orient='records')
-            for col in st.session_state.big_board.columns:
-                if col not in board.columns:
-                    board[col] = 5 if col in EVAL_CATEGORIES else 'N/A'
-            return board
-        return None
-    except Exception as e:
-        st.error(f"Error loading file: {e}")
-        return None
-
-
-
-if "auto_loaded" not in st.session_state:
-    saved_board = load_big_board_from_file()
     if saved_board is not None:
-        st.session_state.big_board = saved_board
+        set_board(saved_board)
+
     st.session_state.auto_loaded = True
 
-# --- Sidebar Controls ---
-with st.sidebar:
-    st.header("🎛️ Controls")
-    st.subheader("💾 Download / 📁 Load")
 
-    # A lógica de download só deve aparecer se a big board não estiver vazia
-    if 'big_board' in st.session_state and not st.session_state.big_board.empty:
-
-        json_bytes = (
-            st.session_state.big_board
-            .loc[:, ~st.session_state.big_board.columns.duplicated()]  # garante colunas únicas
-            .to_json(orient="records", indent=2)  # DataFrame -> str (JSON)
-            .encode("utf-8")  # str -> bytes
-        )
-
-        # OPÇÃO 1: DOWNLOAD DO BACKUP COMPLETO (JSON)
-        # Este ficheiro serve para poder carregar o estado da board mais tarde.
-        st.download_button(
-            label="💾 Download Full Backup (JSON)",
-            data=json_bytes,
-            file_name="big_board_backup_2025.json",
-            mime="application/json",
-            help="Saves the entire Big Board as a JSON file, that can be reuploaded.",
-            use_container_width=True
-        )
-
-        big_board_text = save_big_board_to_txt(st.session_state.big_board)
-        st.download_button(
-            label="📄 Download as Simple Text (.txt)",
-            data=big_board_text.encode('utf-8'),
-            file_name="big_board_rankings_2025.txt",
-            mime="text/plain",
-            help="Saves a simple text file with player rankings and positions.",
-            use_container_width=True
-        )
-
-    else:
-        st.info("Add your first player to enable download options.")
-
-    # --- UPLOAD / CARREGAR BIG BOARD -------------------------------------------
-    uploaded_file = st.file_uploader(
-        "📁 Load Backup (JSON apenas)", type=["json"]
-    )
-
-    if uploaded_file is not None:
-        loaded_board = load_big_board_from_json(fileobj=uploaded_file)
-
-        if loaded_board is not None and not loaded_board.empty:
-            st.session_state.big_board = loaded_board
-            st.session_state["board_loaded_now"] = True  # flag!
-            save_big_board_to_file(st.session_state.big_board)
-        else:
-            st.error("❌ Could not read the uploaded JSON file.")
-
-    # Mostrar mensagem de sucesso exactamente 1 vez
-    if st.session_state.get("board_loaded_now", False):
-        st.success("✅ Big Board loaded successfully!")
-        st.session_state["board_loaded_now"] = False  # limpa a flag
-
-    st.markdown("---")
-    st.subheader("📊 Evaluation Weights")
-    # Assumindo que a constante WEIGHTS existe
-    if 'WEIGHTS' in locals() or 'WEIGHTS' in globals():
-        for cat, weight in WEIGHTS.items():
-            st.text(f"• {cat}: {int(weight * 100)}%")
-
-
-# --- Callbacks ---
 def reset_sliders():
-    """Callback to reset all evaluation sliders to their default value."""
     for category in EVAL_CATEGORIES:
         st.session_state[f"slider_{category}"] = 5
 
 
-# Replace the "Add Player Section" with this improved version:
+def apply_pending_editor_resets():
+    if st.session_state.get("reset_sliders_flag", False):
+        reset_sliders()
+        st.session_state.reset_sliders_flag = False
 
-# --- Add/Modify Player Section ---
-st.subheader("➕✏️ Add/Edit Player To Board")
+    if st.session_state.get("clear_selection", False):
+        st.session_state.player_select = ""
+        st.session_state.last_selected_player = ""
+        reset_sliders()
+        st.session_state.clear_selection = False
 
-# Initialize player tracking if not exists
-if 'last_selected_player' not in st.session_state:
-    st.session_state['last_selected_player'] = ""
 
-# Check if we need to reset sliders (this happens BEFORE creating the widgets)
-if st.session_state.get('reset_sliders_flag', False):
-    for category in EVAL_CATEGORIES:
-        st.session_state[f"slider_{category}"] = 5
-    st.session_state['reset_sliders_flag'] = False
+def render_hero(df):
+    board = get_board()
+    prospect_count = 0 if df is None else len(df)
+    board_count = len(board)
+    avg_score = 0 if board.empty else board[SCORE_COLUMN].mean()
+    top_name = "No board yet"
 
-# Handle clear selection trigger
-if st.session_state.get('clear_selection', False):
-    st.session_state.player_select = ""
-    st.session_state['last_selected_player'] = ""
-    for category in EVAL_CATEGORIES:
-        st.session_state[f"slider_{category}"] = 5
-    st.session_state.clear_selection = False
+    if not board.empty:
+        top_name = order_big_board(board).iloc[0].get("Name", "No board yet")
 
-# Player selection
-if df is not None:
-    available_players = sorted(df['name'].dropna().unique())
-    selected_player = st.selectbox(
-        "Select Player to Evaluate",
-        [""] + available_players,
-        key="player_select"
-    )
-else:
-    selected_player = st.text_input("Player Name", key="player_select")
-
-nome = selected_player
-
-# Check if player is already in big board and show appropriate message
-is_existing_player = False
-existing_player = None
-
-if nome and not st.session_state.big_board.empty:
-    if nome in st.session_state.big_board['Name'].values:
-        is_existing_player = True
-        # Get existing scores from big board
-        existing_player = st.session_state.big_board[st.session_state.big_board['Name'] == nome].iloc[0]
-
-        # Load existing scores into sliders ONLY when player changes (not on every rerun)
-        if st.session_state.get('last_selected_player', '') != nome:
-            for category in EVAL_CATEGORIES:
-                if category in existing_player:
-                    st.session_state[f"slider_{category}"] = existing_player[category]
-            st.session_state['last_selected_player'] = nome
-
-        # Show modification warning/info
-        st.warning(
-            f"⚠️ **{nome}** is already in your Big Board. Modify the scores below and click 'Update Player' to save changes.")
-
-        # Show current ranking
-        current_board = st.session_state.big_board.sort_values(by="Média Ponderada", ascending=False).reset_index(
-            drop=True)
-        current_rank = current_board[current_board['Name'] == nome].index[0] + 1
-        current_score = existing_player['Média Ponderada']
-        st.info(f"📊 Current Ranking: **#{current_rank}** | Current Score: **{current_score:.2f}/10**")
-else:
-    # If no player selected or player not in board, reset the tracking
-    if st.session_state.get('last_selected_player', '') != nome:
-        st.session_state['last_selected_player'] = nome
-
-if nome:
-    player_info = get_player_info(df, nome)
-    st.caption(
-        f"Age: {player_info['idade']} | Ht & Ws: {player_info['alt_ws']} | Position: {player_info['posicao']} | Team: {player_info['equipa']}"
+    html(
+        f"""
+        <section class="draft-hero">
+            <div class="hero-kicker">Scouting workspace</div>
+            <h1>{APP_TITLE}</h1>
+            <p>{APP_SUBTITLE}</p>
+        </section>
+        <section class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Prospects loaded</div>
+                <div class="kpi-value">{prospect_count}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Players on board</div>
+                <div class="kpi-value">{board_count}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Average grade</div>
+                <div class="kpi-value">{avg_score:.2f}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Current 1st</div>
+                <div class="kpi-value">{safe_text(top_name)}</div>
+            </div>
+        </section>
+        """
     )
 
-# Create the sliders OUTSIDE the form for real-time updates
-st.markdown("**Evaluation Categories:**")
-scores = {}
-cols = st.columns(3)
 
-if 'WEIGHTS' in locals() or 'WEIGHTS' in globals():
-    for i, category in enumerate(EVAL_CATEGORIES):
-        with cols[i % 3]:
-            scores[category] = st.slider(
-                f"{category} ({WEIGHTS[category] * 100:.0f}%)",
-                0, 10,
-                value=st.session_state.get(f"slider_{category}", 5),
-                key=f"slider_{category}"
+def render_sidebar():
+    board = get_board()
+
+    with st.sidebar:
+        st.markdown("### Board controls")
+
+        if board.empty:
+            st.info("Add your first player to enable exports.")
+        else:
+            st.download_button(
+                label="Download full backup",
+                data=big_board_to_json_bytes(board),
+                file_name="big_board_backup_2026.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+            st.download_button(
+                label="Download rankings text",
+                data=save_big_board_to_txt(board).encode("utf-8"),
+                file_name="big_board_rankings_2026.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+            st.download_button(
+                label="Download board JPG",
+                data=board_to_jpg_bytes(board),
+                file_name="draft_room_2025_board.jpg",
+                mime="image/jpeg",
+                use_container_width=True,
             )
 
-# Real-time preview calculation (now updates automatically with slider changes)
-media_preview = calculate_weighted_average(scores)
-tier_preview = get_tier(media_preview)
+        uploaded_file = st.file_uploader("Load JSON backup", type=["json"])
+        if uploaded_file is not None:
+            fingerprint = f"{uploaded_file.name}:{uploaded_file.size}"
+            if st.session_state.last_uploaded_board != fingerprint:
+                try:
+                    loaded_board = load_big_board_from_json(fileobj=uploaded_file)
+                    if loaded_board is None or loaded_board.empty:
+                        st.error("Could not read the uploaded JSON file.")
+                    else:
+                        set_board(loaded_board)
+                        save_big_board_to_file(loaded_board)
+                        st.session_state.last_uploaded_board = fingerprint
+                        st.success("Big Board loaded successfully.")
+                except Exception as error:
+                    st.error(f"Could not load backup: {error}")
 
-# Display real-time preview with comparison if it's an existing player
-col1, col2 = st.columns(2)
-with col1:
-    st.metric("Score Preview", f"{media_preview}/10", delta=tier_preview)
+        st.markdown("---")
+        st.markdown("### Evaluation weights")
+        for category, weight in WEIGHTS.items():
+            st.caption(f"{category}: {weight * 100:.0f}%")
 
-if is_existing_player and existing_player is not None:
-    with col1:
-        st.metric("New Score Preview", f"{media_preview}/10", delta=tier_preview)
-    with col2:
-        current_score = existing_player['Média Ponderada']
-        score_change = media_preview - current_score
-        if score_change > 0:
-            delta_text = f"+{score_change:.2f}"
-        elif score_change < 0:
-            delta_text = f"{score_change:.2f}"
-        else:
-            delta_text = "No change"
 
-        st.metric("Current Score", f"{current_score:.2f}/10", delta=delta_text)
-
-# Form with dynamic button text
-with st.form("form_jogador"):
-    if is_existing_player:
-        button_text = f"✏️ Update {nome}"
-        button_help = f"Update {nome}'s evaluation scores in the Big Board"
-    else:
-        button_text = "➕ Add to Big Board"
-        button_help = "Add this player to your Big Board"
-
-    # Additional options for existing players
-    if is_existing_player:
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            submitted = st.form_submit_button(button_text, type="primary", help=button_help)
-        with col2:
-            remove_player = st.form_submit_button("🗑️ Remove", type="secondary", help=f"Remove {nome} from Big Board")
-
-    else:
-        submitted = st.form_submit_button(button_text, type="primary", use_container_width=True, help=button_help)
-        remove_player = False
-
-# Handle form submission
-if submitted and nome:
-    player_info = get_player_info(df, nome)
-    player_data = {
-        "Name": nome,
-        "Age": player_info['idade'],
-        "Measurements": player_info['alt_ws'],
-        "Position": player_info['posicao'],
-        "College/Team": player_info['equipa'],
-        "Média Ponderada": media_preview,
-        "Tier": tier_preview,
-        **scores
-    }
-
-    if is_existing_player:
-        # Update existing player
-        st.session_state.big_board.loc[
-            st.session_state.big_board['Name'] == nome, player_data.keys()
-        ] = list(player_data.values())
-        save_big_board_to_file(st.session_state.big_board)
-        st.success(f"✅ {nome}'s evaluation has been updated!")
-    else:
-        # Add new player
-        new_player_df = pd.DataFrame([player_data])
-        st.session_state.big_board = pd.concat([st.session_state.big_board, new_player_df], ignore_index=True)
-        save_big_board_to_file(st.session_state.big_board)
-        st.success(f"✅ {nome} has been added to the Big Board!")
-
-    # Clear player selection and reset sliders using the flag
-    st.session_state['last_selected_player'] = ""
-    st.session_state['reset_sliders_flag'] = True
-    st.session_state.clear_selection = True
-    st.rerun()
-
-# Handle player removal
-if remove_player and nome:
-    st.session_state.big_board = st.session_state.big_board[st.session_state.big_board['Name'] != nome]
-    save_big_board_to_file(st.session_state.big_board)
-    st.success(f"✅ {nome} has been removed from the Big Board!")
-
-    # Set flag to reset sliders on next run
-    st.session_state['reset_sliders_flag'] = True
-    st.rerun()
-
-# --- Big Board Rankings Display ---
-st.markdown("---")
-st.subheader("📋 Big Board Rankings")
-
-if not st.session_state.big_board.empty:
-    display_board = st.session_state.big_board.sort_values(by="Média Ponderada", ascending=False).reset_index(drop=True)
-
-    # Defina o índice para começar em 1
-    display_board.index = display_board.index + 1
-    display_board.index.name = "Rank"
-
-    display_cols = ["Name", "Tier", "Média Ponderada", "Age", "Measurements", "Position", "College/Team"] + EVAL_CATEGORIES
-    display_board = display_board[display_cols]
-
-    st.info("💡 You can double-click a 'Tier' cell to override it.")
-    edited_df = st.data_editor(
-        display_board,
-        use_container_width=True,
-        height=400,
-        disabled=display_board.columns.drop("Tier"),
-        column_config={
-            "Média Ponderada": st.column_config.ProgressColumn(
-                "Score", format="%.2f", min_value=0, max_value=10,
-            ),
-        }
+def render_player_profile(player_info):
+    html(
+        f"""
+        <div class="player-chip">
+            <span>Age: {safe_text(player_info["age"])}</span>
+            <span>Ht/Ws: {safe_text(player_info["measurements"])}</span>
+            <span>Position: {safe_text(player_info["position"])}</span>
+            <span>Team: {safe_text(player_info["team"])}</span>
+        </div>
+        """
     )
 
-    if not edited_df.equals(display_board):
-        st.session_state.big_board = pd.merge(
-            st.session_state.big_board.drop(columns=['Tier']),
-            edited_df[['Name', 'Tier']],
-            on='Name',
-            how='left'
-        )
-        save_big_board_to_file(st.session_state.big_board)
-        st.rerun()
-    # add button to save big board to txt file
-    big_board = save_big_board_to_txt(st.session_state.big_board)
-    if big_board:
-        st.download_button(
-            label="💾 Download Big Board as Text File",
-            data=big_board.encode('utf-8'),  # Importante: converter string para bytes
-            file_name="big_board.txt",
-            mime="text/plain"
-        )
+
+def select_player(df):
+    if df is None or df.empty:
+        return st.text_input("Player name", key="player_select")
+
+    available_players = sorted(df["name"].dropna().unique())
+    options = [""] + available_players
+
+    if st.session_state.player_select not in options:
+        st.session_state.player_select = ""
+
+    return st.selectbox("Select player to evaluate", options, key="player_select")
+
+
+def hydrate_existing_player(name, board):
+    if not name or board.empty or name not in board["Name"].values:
+        if st.session_state.last_selected_player != name:
+            st.session_state.last_selected_player = name
+        return False, None
+
+    existing_player = board[board["Name"] == name].iloc[0]
+
+    if st.session_state.last_selected_player != name:
+        for category in EVAL_CATEGORIES:
+            st.session_state[f"slider_{category}"] = int(existing_player[category])
+        st.session_state.last_selected_player = name
+
+    return True, existing_player
+
+
+def render_sliders():
+    scores = {}
+    columns = st.columns(3)
+
+    for index, category in enumerate(EVAL_CATEGORIES):
+        with columns[index % 3]:
+            scores[category] = st.slider(
+                f"{category} ({WEIGHTS[category] * 100:.0f}%)",
+                min_value=0,
+                max_value=10,
+                value=st.session_state.get(f"slider_{category}", 5),
+                key=f"slider_{category}",
+            )
+
+    return scores
+
+
+def build_player_record(df, name, scores, score, tier):
+    player_info = get_player_info(df, name)
+    return {
+        "Name": name,
+        "Age": player_info["age"],
+        "Measurements": player_info["measurements"],
+        "Position": player_info["position"],
+        "College/Team": player_info["team"],
+        SCORE_COLUMN: score,
+        "Tier": tier,
+        **scores,
+    }
+
+
+def save_player_record(player_record, is_existing_player):
+    board = get_board()
+
+    if is_existing_player:
+        mask = board["Name"] == player_record["Name"]
+        for column, value in player_record.items():
+            board.loc[mask, column] = value
     else:
-        st.error("Failed to save Big Board to text file.")
-else:
-    st.info("👆 Add your first player to get started!")
+        player_record[RANK_COLUMN] = len(board) + 1
+        board = pd.concat([board, pd.DataFrame([player_record])], ignore_index=True)
 
-# --- Player Comparison and Analysis ---
-if not st.session_state.big_board.empty:
-    st.markdown("---")
-    st.subheader("🔍 Player Comparison")
+    set_board(board)
+    save_big_board_to_file(st.session_state.big_board)
 
-    col_comp1, col_comp2 = st.columns(2)
-    with col_comp1:
-        players = st.session_state.big_board['Name'].tolist()
-        selected_players = st.multiselect(
-            "Select 2-5 players to compare:",
-            players,
-            default=players[:2] if len(players) >= 2 else [],
-            max_selections=10
+
+def remove_player(name):
+    board = get_board()
+    set_board(board[board["Name"] != name])
+    save_big_board_to_file(st.session_state.big_board)
+    st.session_state.reset_sliders_flag = True
+
+
+def render_player_editor(df):
+    apply_pending_editor_resets()
+
+    html('<div class="section-label">Evaluate</div>')
+    st.subheader("Scout card")
+
+    board = get_board()
+    name = select_player(df)
+    is_existing_player, existing_player = hydrate_existing_player(name, board)
+
+    if is_existing_player:
+        current_board = order_big_board(board).reset_index(drop=True)
+        current_rank = current_board[current_board["Name"] == name].index[0] + 1
+        current_score = float(existing_player[SCORE_COLUMN])
+        st.warning(
+            f"{name} is already on your Big Board. Adjust the grades and update the player."
         )
-    with col_comp2:
-        comparison_type = st.radio(
-            "Comparison Type:",
-            ["Stats Comparison", "Radar Chart (Max. 4 players)", "Table Comparison"],
-            horizontal=True
-        )
+        st.info(f"Current ranking: #{current_rank} | Current score: {current_score:.2f}/10")
 
-    if len(selected_players) >= 2:
-        comparison_data = st.session_state.big_board[st.session_state.big_board['Name'].isin(selected_players)]
+    if name:
+        render_player_profile(get_player_info(df, name))
 
-        if comparison_type == "Stats Comparison":
-            st.markdown("**📊 Basketball Statistics Comparison**")
-            stats_data = [get_player_stats(df, name) for name in selected_players]
+    st.markdown("**Evaluation categories**")
+    scores = render_sliders()
+    score_preview = calculate_weighted_average(scores)
+    tier_preview = get_tier(score_preview)
 
-            if df is not None and any(stats_data):
-                stats_df = pd.DataFrame(stats_data)
-                stats_df.insert(0, 'Name', selected_players)
-                stats_df.set_index('Name', inplace=True)
+    preview_cols = st.columns(2)
+    preview_cols[0].metric("Score preview", f"{score_preview}/10", tier_preview)
 
-                stats_columns = ['games', 'points_per36', 'assists_per36', 'rebounds_per36', 'steals_per36',
-                                 'blocks_per36', 'turnovers_per36', 'obpm', 'dbpm', 'bpm',
-                                 'usg_per', 'ts_per', 'ast_per_to', '3p_pct', '3pa_rate', 'fta_rate']
+    if is_existing_player:
+        current_score = float(existing_player[SCORE_COLUMN])
+        score_change = score_preview - current_score
+        delta_text = "No change" if score_change == 0 else f"{score_change:+.2f}"
+        preview_cols[1].metric("Saved score", f"{current_score:.2f}/10", delta_text)
 
-                rename_map = {'games': 'GP',
-                              'points_per36': 'PTS/36',
-                              'assists_per36': 'AST/36',
-                              'rebounds_per36': 'REB/36',
-                              'steals_per36': 'STL/36',
-                              'blocks_per36': 'BLK/36',
-                              'turnovers_per36': 'TO/36',
-                              'obpm': 'OBPM',
-                              'dbpm': 'DBPM',
-                              'bpm': 'BPM',
-                              'usg_per': 'USG%',
-                              'ts_per': 'TS%',
-                              'ast_per_to': 'AST/TO',
-                              '3p_pct': '3PT%',
-                              '3pa_rate': '3PA Rate',
-                              'fta_rate': 'FTA Rate'
-                              }
+    with st.form("player_form"):
+        button_label = f"Update {name}" if is_existing_player else "Add to Big Board"
+        button_help = "Save this evaluation to the board."
 
-                # Select only available columns and rename
-                available_rename_keys = [key for key in rename_map.keys() if key in stats_df.columns]
-                display_stats_df = stats_df[available_rename_keys].rename(columns=rename_map)
+        if is_existing_player:
+            button_cols = st.columns([3, 1])
+            submitted = button_cols[0].form_submit_button(
+                button_label,
+                type="primary",
+                help=button_help,
+                disabled=not bool(name),
+                use_container_width=True,
+            )
+            remove_submitted = button_cols[1].form_submit_button(
+                "Remove",
+                type="secondary",
+                disabled=not bool(name),
+                use_container_width=True,
+            )
+        else:
+            submitted = st.form_submit_button(
+                button_label,
+                type="primary",
+                help=button_help,
+                disabled=not bool(name),
+                use_container_width=True,
+            )
+            remove_submitted = False
 
-                # Preprocess to handle empty or non-numeric values
-                display_stats_df = display_stats_df.replace(['', '-', 'N/A', None], np.nan)
-
-                # Create a numeric DataFrame for computations
-                numeric_df = display_stats_df.apply(pd.to_numeric, errors='coerce')
-
-                # Apply formatting to display_stats_df
-                for col in ['TS%', '3PT%']:
-                    if col in display_stats_df.columns:
-                        display_stats_df[col] = display_stats_df[col].apply(
-                            lambda x: f"{x * 100:.1f}%" if pd.notnull(x) else '-')
-
-                if 'USG%' in display_stats_df.columns:
-                    display_stats_df['USG%'] = display_stats_df['USG%'].apply(
-                        lambda x: f"{x:.1f}%" if pd.notnull(x) else '-')
-
-                for col in display_stats_df.columns:
-                    if col in ['3PA Rate', 'FTA Rate']:
-                        display_stats_df[col] = display_stats_df[col].apply(
-                            lambda x: f"{x:.3f}" if pd.notnull(x) else '-')
-                    elif col in ['PTS/36', 'AST/36', 'REB/36', 'STL/36', 'BLK/36', 'TO/36', 'OBPM', 'DBPM', 'BPM']:
-                        display_stats_df[col] = display_stats_df[col].apply(
-                            lambda x: f"{x:.1f}" if pd.notnull(x) else '-')
-                    elif col not in ['TS%', '3PT%', 'USG%', 'GP']:
-                        display_stats_df[col] = display_stats_df[col].apply(
-                            lambda x: f"{x:.2f}" if pd.notnull(x) else '-')
-
-                # Define columns to highlight
-                columns_to_highlight = [col for col in display_stats_df.columns if col not in ['TO/36']]
-
-                # Apply styles
-                styled = apply_highlighting(display_stats_df, numeric_df, columns_to_highlight, ['TO/36'])
-
-                # Display the styled DataFrame
-                st.dataframe(display_stats_df.style.apply(lambda _: styled, axis=None), use_container_width=True)
-            else:
-                st.warning("Player stats data (CSV) is not available.")
-
-        elif comparison_type == "Radar Chart (Max. 4 players)" and len(selected_players) <= 4:
-            st.header("Player Comparison - Radar Chart")
-            fig_svg = create_overlaid_radar_chart(comparison_data, (6,6))
-            buf_svg = io.BytesIO()
-            fig_svg.savefig(buf_svg, format="svg", bbox_inches="tight", transparent=True)
-            plt.close(fig_svg)  # Lembre-se de fechar a figura para libertar memória
-
-            # 2. Rebobine o buffer (passo ainda essencial)
-            buf_svg.seek(0)
-
-            # 3. Extraia os bytes do buffer e DESCUDIFIQUE-OS para uma string
-            svg_string = buf_svg.getvalue().decode('utf-8')
-
-            # 4. Passe a STRING para o st.image
-            # Agora o Streamlit irá reconhecer o código SVG e não usará o Pillow
-            st.image(svg_string)
-
-        elif comparison_type == "Radar Chart (Max. 4 players)" and len(selected_players) > 4:
-            st.warning("Please select up to 4 players for the Radar Chart comparison.")
-
-        elif comparison_type == "Table Comparison":
-            comp_table = comparison_data.set_index('Name')[EVAL_CATEGORIES + ['Média Ponderada']]
-
-            comp_num = comp_table.apply(pd.to_numeric, errors='coerce')
-
-            for col in comp_table.columns:
-                if col == 'Média Ponderada':
-                    comp_table[col] = comp_table[col].apply(lambda x: f"{x:.1f}" if pd.notnull(x) else '-')
-                else:
-                    comp_table[col] = comp_table[col].apply(lambda x: f"{int(x)}" if pd.notnull(x) else '-')
-
-
-            styled_table = comp_table.style.apply(lambda _: apply_highlighting_list(comp_table, comp_num), axis=None)
-
-            st.dataframe(styled_table, use_container_width=True)
-
-# --- Clear Board Option ---
-if not st.session_state.big_board.empty:
-    st.markdown("---")
-    if st.button("🗑️ Clear All Players", type="secondary"):
-        st.session_state.big_board = st.session_state.big_board.iloc[0:0]
-        save_big_board_to_file(st.session_state.big_board)
-        st.success("Big Board has been cleared!")
+    if submitted and name:
+        player_record = build_player_record(df, name, scores, score_preview, tier_preview)
+        save_player_record(player_record, is_existing_player)
+        st.success(f"{name} was {'updated' if is_existing_player else 'added'} successfully.")
+        st.session_state.last_selected_player = ""
+        st.session_state.reset_sliders_flag = True
+        st.session_state.clear_selection = True
         st.rerun()
+
+    if remove_submitted and name:
+        remove_player(name)
+        st.success(f"{name} was removed from the Big Board.")
+        st.rerun()
+
+
+def render_live_board():
+    board = get_board()
+
+    html('<div class="section-label">Live board</div>')
+    st.subheader("Draft order")
+
+    if board.empty:
+        html(
+            """
+            <div class="empty-state">
+                No players yet. Your ranked board will appear here while you grade prospects.
+            </div>
+            """
+        )
+        return
+
+    rows = []
+    ranked_board = order_big_board(board).reset_index(drop=True)
+    for index, row in ranked_board.iterrows():
+        rank = int(row.get(RANK_COLUMN, index + 1))
+        name = safe_text(row.get("Name", "N/A"))
+        position = safe_text(row.get("Position", "N/A"))
+        team = safe_text(row.get("College/Team", "N/A"))
+        tier = safe_text(row.get("Tier", "N/A"))
+        score = float(row.get(SCORE_COLUMN, 0))
+        rows.append(f"""
+        <div class="board-row">
+            <div class="board-rank">#{rank}</div>
+            <div>
+                <div class="board-name">{name}</div>
+                <div class="board-meta">{position} - {team} - {tier}</div>
+            </div>
+            <div class="board-score">{score:.2f}</div>
+        </div>
+        """)
+
+    html(
+        f"""
+        <div class="board-card">
+        {''.join(rows)}
+        </div>
+        """
+    )
+
+
+def get_display_board():
+    board = get_board()
+    if board.empty:
+        return board
+
+    display_board = order_big_board(board).reset_index(drop=True)
+    return display_board[BOARD_COLUMNS]
+
+
+def sortable_label(row):
+    return str(row["Name"])
+
+
+def render_drag_board(display_board):
+    label_to_name = {
+        sortable_label(row): row["Name"]
+        for _, row in display_board.iterrows()
+    }
+    items = list(label_to_name.keys())
+    custom_style = """
+    .sortable-component {
+        background: transparent;
+    }
+    .sortable-container {
+        background: #0d120f;
+        border: 1px solid #2c3a31;
+        border-radius: 8px;
+        padding: 0.75rem;
+        max-height: 640px;
+        overflow-y: auto;
+    }
+    .sortable-container-header {
+        display: none;
+    }
+    .sortable-container-body {
+        background: transparent;
+        counter-reset: board-rank;
+    }
+    .sortable-item {
+        background: linear-gradient(180deg, #151d17, #101610);
+        border: 1px solid #2d4436;
+        border-radius: 8px;
+        color: #f4f1e8;
+        cursor: grab;
+        font-family: Inter, Segoe UI, Arial, sans-serif;
+        font-size: 0.96rem;
+        font-weight: 700;
+        margin-bottom: 0.55rem;
+        padding: 0.75rem 0.85rem;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+    }
+    .sortable-item::before {
+        color: #f2c66d;
+        content: "#" counter(board-rank) "  ";
+        counter-increment: board-rank;
+        font-weight: 900;
+    }
+    .sortable-item:hover {
+        border-color: #36c782;
+        color: #ffffff;
+    }
+    .sortable-item:active {
+        cursor: grabbing;
+    }
+    """
+    sorted_items = sort_items(
+        items,
+        direction="vertical",
+        custom_style=custom_style,
+        key="drag_big_board_order",
+    )
+    sorted_names = [label_to_name[item] for item in sorted_items if item in label_to_name]
+
+    if sorted_names != display_board["Name"].tolist():
+        board = get_board()
+        rank_lookup = {name: index + 1 for index, name in enumerate(sorted_names)}
+        board[RANK_COLUMN] = board["Name"].map(rank_lookup).fillna(board[RANK_COLUMN])
+        set_board(board)
+        save_big_board_to_file(st.session_state.big_board)
+        st.rerun()
+
+
+def render_tier_editor(display_board):
+    tier_df = display_board[["Name", "Tier"]].copy()
+    edited_df = st.data_editor(
+        tier_df,
+        use_container_width=True,
+        height=300,
+        hide_index=True,
+        disabled=["Name"],
+    )
+
+    current_tiers = tier_df.set_index("Name")["Tier"].astype(str)
+    edited_tiers = edited_df.set_index("Name")["Tier"].astype(str)
+    if not edited_tiers.equals(current_tiers):
+        board = get_board()
+        board["Tier"] = board["Name"].map(edited_tiers).fillna(board["Tier"])
+        set_board(board)
+        save_big_board_to_file(st.session_state.big_board)
+        st.rerun()
+
+
+def render_rankings():
+    html('<div class="section-label">Rankings</div>')
+    st.subheader("Drag Big Board")
+
+    display_board = get_display_board()
+    if display_board.empty:
+        html(
+            """
+            <div class="empty-state">
+                Your board is empty. Pick a player above, grade the categories, and start building.
+            </div>
+            """
+        )
+        return
+
+    st.caption("Drag players up or down to change the board order. The order is saved automatically.")
+    render_drag_board(display_board)
+
+    with st.expander("Tier overrides"):
+        render_tier_editor(display_board)
+
+    st.download_button(
+        label="Download pretty board JPG",
+        data=board_to_jpg_bytes(get_board()),
+        file_name="draft_room_2025_board.jpg",
+        mime="image/jpeg",
+        use_container_width=True,
+    )
+
+
+def render_stats_comparison(df, selected_players):
+    st.markdown("**Basketball statistics**")
+    stats_records = [get_player_stats(df, name) for name in selected_players]
+
+    if df is None or not any(stats_records):
+        st.warning("Player stats data is not available.")
+        return
+
+    display_df, numeric_df = build_stats_table(stats_records, selected_players)
+    if display_df.empty:
+        st.warning("There are no stats available for this selection.")
+        return
+
+    styled = apply_extreme_highlighting(display_df, numeric_df, lower_is_better={"TO/36"})
+    st.dataframe(display_df.style.apply(lambda _: styled, axis=None), use_container_width=True)
+
+
+def render_radar_chart(comparison_data, selected_players):
+    if len(selected_players) > 4:
+        st.warning("Select up to 4 players for the radar chart.")
+        return
+
+    fig = create_overlaid_radar_chart(comparison_data, (6, 6))
+    if fig is None:
+        st.warning("No radar data available.")
+        return
+
+    st.image(figure_to_svg(fig))
+
+
+def render_eval_comparison(comparison_data):
+    eval_table, numeric_df = build_eval_table(comparison_data)
+    styled = apply_extreme_highlighting(eval_table, numeric_df)
+    st.dataframe(eval_table.style.apply(lambda _: styled, axis=None), use_container_width=True)
+
+
+def render_comparison(df):
+    board = get_board()
+    if board.empty:
+        return
+
+    html('<div class="section-label">Compare</div>')
+    st.subheader("Player comparison")
+
+    players = board["Name"].tolist()
+    default_players = players[:2] if len(players) >= 2 else []
+
+    control_cols = st.columns([1.25, 1])
+    selected_players = control_cols[0].multiselect(
+        "Select 2-5 players",
+        players,
+        default=default_players,
+        max_selections=5,
+    )
+    comparison_type = control_cols[1].radio(
+        "View",
+        ["Stats", "Radar", "Grades"],
+        horizontal=True,
+    )
+
+    if len(selected_players) < 2:
+        st.info("Select at least two players to compare.")
+        return
+
+    comparison_data = board[board["Name"].isin(selected_players)]
+
+    if comparison_type == "Stats":
+        render_stats_comparison(df, selected_players)
+    elif comparison_type == "Radar":
+        render_radar_chart(comparison_data, selected_players)
+    else:
+        render_eval_comparison(comparison_data)
+
+
+def render_clear_board():
+    board = get_board()
+    if board.empty:
+        return
+
+    html('<div class="section-label">Reset</div>')
+    st.subheader("Danger zone")
+    if st.button("Clear all players", type="secondary"):
+        set_board(create_empty_board())
+        save_big_board_to_file(st.session_state.big_board)
+        st.success("Big Board has been cleared.")
+        st.rerun()
+
+
+def main():
+    initialize_state()
+    auto_load_saved_board()
+
+    try:
+        df = cached_prospect_data()
+    except FileNotFoundError:
+        st.error("Could not find nba_prospects_2026_stats.csv in the project root.")
+        df = None
+    except Exception as error:
+        st.error(f"Could not load prospect data: {error}")
+        df = None
+
+    render_hero(df)
+    render_sidebar()
+
+    editor_col, board_col = st.columns([1.04, 0.96], gap="large")
+    with editor_col:
+        render_player_editor(df)
+    with board_col:
+        render_live_board()
+
+    rankings_tab, comparison_tab, reset_tab = st.tabs(["Big Board", "Compare", "Reset"])
+    with rankings_tab:
+        render_rankings()
+    with comparison_tab:
+        render_comparison(df)
+    with reset_tab:
+        render_clear_board()
+
+
+if __name__ == "__main__":
+    main()
