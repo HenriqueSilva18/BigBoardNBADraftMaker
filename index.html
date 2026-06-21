@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+  <title>NBA Draft Big Board</title>
+  <!-- stlite CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/@stlite/mountable@0.63.1/build/stlite.css" />
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <!-- stlite JS -->
+  <script src="https://unpkg.com/@stlite/mountable@0.63.1/build/stlite.js"></script>
+  <script>
+    stlite.mount(
+      {
+        requirements: [
+          "pandas",
+          "matplotlib",
+          "numpy",
+          "pillow",
+          "streamlit-sortables"
+        ],
+        entrypoint: "app.py",
+        files: {
+          "app.py": { url: "app.py" },
+          "utils.py": { url: "utils.py" },
+          "nba_prospects_2025_stats.csv": { url: "nba_prospects_2025_stats.csv" },
+          "nba_prospects_2026_stats.csv": { url: "nba_prospects_2026_stats.csv" },
+          "big_board_backup_2026.json": { url: "big_board_backup_2026.json" },
+          "big_board_save.json": { url: "big_board_save.json" },
+          "big_board_nba_draft_2026.txt": { url: "big_board_nba_draft_2026.txt" },
+          "big_board_app/__init__.py": { url: "big_board_app/__init__.py" },
+          "big_board_app/config.py": { url: "big_board_app/config.py" },
+          "big_board_app/data.py": { url: "big_board_app/data.py" },
+          "big_board_app/export_image.py": { url: "big_board_app/export_image.py" },
+          "big_board_app/scoring.py": { url: "big_board_app/scoring.py" },
+          "big_board_app/storage.py": { url: "big_board_app/storage.py" },
+          "big_board_app/theme.py": { url: "big_board_app/theme.py" },
+          "big_board_app/visuals.py": { url: "big_board_app/visuals.py" }
+        },
+      },
+      document.getElementById("root")
+    );
+  </script>
+</body>
+
+</html>

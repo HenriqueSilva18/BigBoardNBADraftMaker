@@ -15,7 +15,7 @@ from big_board_app.config import (
     WEIGHTS,
 )
 from big_board_app.data import get_player_info, get_player_stats, load_prospect_data
-from big_board_app.export_image import board_to_jpg_bytes
+from big_board_app.export_image import board_to_png_bytes
 from big_board_app.scoring import calculate_weighted_average, get_tier
 from big_board_app.storage import (
     big_board_to_json_bytes,
@@ -40,7 +40,6 @@ st.set_page_config(page_title=APP_TITLE, layout="wide", page_icon="🏀")
 inject_theme()
 
 
-@st.cache_data(show_spinner=False)
 def cached_prospect_data():
     return load_prospect_data()
 
@@ -52,7 +51,8 @@ def safe_text(value):
 
 
 def html(content):
-    st.markdown(dedent(content).strip(), unsafe_allow_html=True)
+    cleaned = "\n".join(line.strip() for line in dedent(content).strip().splitlines())
+    st.markdown(cleaned, unsafe_allow_html=True)
 
 
 def get_board():
@@ -113,7 +113,6 @@ def render_hero(df):
     board = get_board()
     prospect_count = 0 if df is None else len(df)
     board_count = len(board)
-    avg_score = 0 if board.empty else board[SCORE_COLUMN].mean()
     top_name = "No board yet"
 
     if not board.empty:
@@ -136,8 +135,8 @@ def render_hero(df):
                 <div class="kpi-value">{board_count}</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">Average grade</div>
-                <div class="kpi-value">{avg_score:.2f}</div>
+                <div class="kpi-label">Draft class</div>
+                <div class="kpi-value">2026</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-label">Current 1st</div>
@@ -172,10 +171,10 @@ def render_sidebar():
                 use_container_width=True,
             )
             st.download_button(
-                label="Download board JPG",
-                data=board_to_jpg_bytes(board),
-                file_name="draft_room_2025_board.jpg",
-                mime="image/jpeg",
+                label="Download board PNG",
+                data=board_to_png_bytes(board),
+                file_name="draft_room_2026_board.png",
+                mime="image/png",
                 use_container_width=True,
             )
 
@@ -399,14 +398,15 @@ def render_live_board():
         name = safe_text(row.get("Name", "N/A"))
         position = safe_text(row.get("Position", "N/A"))
         team = safe_text(row.get("College/Team", "N/A"))
-        tier = safe_text(row.get("Tier", "N/A"))
+        age = safe_text(row.get("Age", "N/A"))
+        measurements = safe_text(row.get("Measurements", "N/A"))
         score = float(row.get(SCORE_COLUMN, 0))
         rows.append(f"""
         <div class="board-row">
             <div class="board-rank">#{rank}</div>
             <div>
                 <div class="board-name">{name}</div>
-                <div class="board-meta">{position} - {team} - {tier}</div>
+                <div class="board-meta">{position} - {team} - {age} - {measurements}</div>
             </div>
             <div class="board-score">{score:.2f}</div>
         </div>
@@ -431,7 +431,14 @@ def get_display_board():
 
 
 def sortable_label(row):
-    return str(row["Name"])
+    score = float(row.get(SCORE_COLUMN, 0))
+    info = " - ".join(
+        str(value)
+        for value in [row.get("Position", "N/A"), row.get("College/Team", "N/A")]
+        if pd.notna(value) and str(value) != "N/A"
+    )
+    label = f"{row['Name']} | {info}" if info else str(row["Name"])
+    return f"{label} | {score:.2f}"
 
 
 def render_drag_board(display_board):
@@ -463,14 +470,21 @@ def render_drag_board(display_board):
         background: linear-gradient(180deg, #151d17, #101610);
         border: 1px solid #2d4436;
         border-radius: 8px;
+        box-sizing: border-box;
         color: #f4f1e8;
         cursor: grab;
+        display: flex;
+        align-items: center;
         font-family: Inter, Segoe UI, Arial, sans-serif;
         font-size: 0.96rem;
         font-weight: 700;
+        min-height: 56px;
         margin-bottom: 0.55rem;
         padding: 0.75rem 0.85rem;
         box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+        transform: none !important;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+        width: 100%;
     }
     .sortable-item::before {
         color: #f2c66d;
@@ -481,9 +495,15 @@ def render_drag_board(display_board):
     .sortable-item:hover {
         border-color: #36c782;
         color: #ffffff;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+        min-height: 56px;
+        padding: 0.75rem 0.85rem;
+        transform: none !important;
+        width: 100%;
     }
     .sortable-item:active {
         cursor: grabbing;
+        transform: none !important;
     }
     """
     sorted_items = sort_items(
@@ -545,16 +565,16 @@ def render_rankings():
         render_tier_editor(display_board)
 
     st.download_button(
-        label="Download pretty board JPG",
-        data=board_to_jpg_bytes(get_board()),
-        file_name="draft_room_2025_board.jpg",
-        mime="image/jpeg",
+        label="Download pretty board PNG",
+        data=board_to_png_bytes(get_board()),
+        file_name="draft_room_2026_board.png",
+        mime="image/png",
         use_container_width=True,
     )
 
 
 def render_stats_comparison(df, selected_players):
-    st.markdown("**Basketball statistics**")
+    html('<div class="compare-subtitle">Stat profile</div>')
     stats_records = [get_player_stats(df, name) for name in selected_players]
 
     if df is None or not any(stats_records):
@@ -566,8 +586,7 @@ def render_stats_comparison(df, selected_players):
         st.warning("There are no stats available for this selection.")
         return
 
-    styled = apply_extreme_highlighting(display_df, numeric_df, lower_is_better={"TO/36"})
-    st.dataframe(display_df.style.apply(lambda _: styled, axis=None), use_container_width=True)
+    render_styled_comparison_table(display_df, numeric_df, lower_is_better={"TO/36"})
 
 
 def render_radar_chart(comparison_data, selected_players):
@@ -575,18 +594,105 @@ def render_radar_chart(comparison_data, selected_players):
         st.warning("Select up to 4 players for the radar chart.")
         return
 
-    fig = create_overlaid_radar_chart(comparison_data, (6, 6))
+    html('<div class="compare-subtitle">Skill shape</div>')
+    fig = create_overlaid_radar_chart(comparison_data, (5.4, 5.4))
     if fig is None:
         st.warning("No radar data available.")
         return
 
-    st.image(figure_to_svg(fig))
+    st.image(figure_to_svg(fig), width=860)
 
 
 def render_eval_comparison(comparison_data):
+    html('<div class="compare-subtitle">Grade matrix</div>')
     eval_table, numeric_df = build_eval_table(comparison_data)
-    styled = apply_extreme_highlighting(eval_table, numeric_df)
-    st.dataframe(eval_table.style.apply(lambda _: styled, axis=None), use_container_width=True)
+    render_styled_comparison_table(eval_table, numeric_df)
+
+
+def style_comparison_table(display_df, numeric_df, lower_is_better=()):
+    highlights = apply_extreme_highlighting(display_df, numeric_df, lower_is_better=lower_is_better)
+    return (
+        display_df.style
+        .hide(axis="index")
+        .set_properties(
+            **{
+                "background-color": "#0d120f",
+                "border-color": "#2d4436",
+                "color": "#f4f1e8",
+                "font-weight": "650",
+            }
+        )
+        .set_table_styles(
+            [
+                {
+                    "selector": "th",
+                    "props": [
+                        ("background-color", "#151d17"),
+                        ("color", "#b6c2b8"),
+                        ("font-weight", "800"),
+                        ("border-color", "#2d4436"),
+                    ],
+                },
+                {
+                    "selector": "td",
+                    "props": [
+                        ("border-color", "#2d4436"),
+                        ("padding", "0.55rem 0.65rem"),
+                    ],
+                },
+            ]
+        )
+        .apply(lambda _: highlights, axis=None)
+    )
+
+
+def render_styled_comparison_table(display_df, numeric_df, lower_is_better=()):
+    styled = style_comparison_table(display_df, numeric_df, lower_is_better=lower_is_better)
+    table_html = styled.to_html()
+    st.markdown(f'<div class="comparison-table-wrap">{table_html}</div>', unsafe_allow_html=True)
+
+
+def best_category(row):
+    grades = pd.to_numeric(row[EVAL_CATEGORIES], errors="coerce")
+    if grades.dropna().empty:
+        return "N/A"
+    return grades.idxmax()
+
+
+def render_compare_cards(comparison_data):
+    cards = []
+    for _, row in comparison_data.iterrows():
+        rank = int(row.get(RANK_COLUMN, 0))
+        name = safe_text(row.get("Name", "N/A"))
+        position = safe_text(row.get("Position", "N/A"))
+        team = safe_text(row.get("College/Team", "N/A"))
+        age = safe_text(row.get("Age", "N/A"))
+        measurements = safe_text(row.get("Measurements", "N/A"))
+        score = float(row.get(SCORE_COLUMN, 0))
+        strongest = safe_text(best_category(row))
+        cards.append(
+            f"""
+            <div class="compare-card">
+                <div class="compare-rank">#{rank}</div>
+                <div class="compare-name">{name}</div>
+                <div class="compare-meta">{position} - {team}</div>
+                <div class="compare-score">{score:.2f}</div>
+                <div class="compare-chip-row">
+                    <span>Age {age}</span>
+                    <span>{measurements}</span>
+                    <span>Best: {strongest}</span>
+                </div>
+            </div>
+            """
+        )
+
+    html(
+        f"""
+        <div class="compare-card-grid">
+            {''.join(cards)}
+        </div>
+        """
+    )
 
 
 def render_comparison(df):
@@ -595,35 +701,36 @@ def render_comparison(df):
         return
 
     html('<div class="section-label">Compare</div>')
-    st.subheader("Player comparison")
+    st.subheader("Comparison room")
 
-    players = board["Name"].tolist()
+    ordered_board = order_big_board(board)
+    players = ordered_board["Name"].tolist()
     default_players = players[:2] if len(players) >= 2 else []
 
-    control_cols = st.columns([1.25, 1])
-    selected_players = control_cols[0].multiselect(
-        "Select 2-5 players",
+    selected_players = st.multiselect(
+        "Players to compare",
         players,
         default=default_players,
         max_selections=5,
-    )
-    comparison_type = control_cols[1].radio(
-        "View",
-        ["Stats", "Radar", "Grades"],
-        horizontal=True,
     )
 
     if len(selected_players) < 2:
         st.info("Select at least two players to compare.")
         return
 
-    comparison_data = board[board["Name"].isin(selected_players)]
+    comparison_data = (
+        ordered_board.set_index("Name")
+        .loc[selected_players]
+        .reset_index()
+    )
+    render_compare_cards(comparison_data)
 
-    if comparison_type == "Stats":
+    stats_tab, radar_tab, grades_tab = st.tabs(["Stats", "Radar", "Grades"])
+    with stats_tab:
         render_stats_comparison(df, selected_players)
-    elif comparison_type == "Radar":
+    with radar_tab:
         render_radar_chart(comparison_data, selected_players)
-    else:
+    with grades_tab:
         render_eval_comparison(comparison_data)
 
 

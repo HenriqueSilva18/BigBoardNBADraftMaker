@@ -108,19 +108,11 @@ def save_big_board_to_txt(big_board):
     board = order_big_board(board).reset_index(drop=True)
     max_name_len = board["Name"].astype(str).str.len().max()
 
-    for tier in board["Tier"].unique():
-        lines.append(f"\n\t{tier}\n")
-        tier_players = board[board["Tier"] == tier]
-
-        if tier_players.empty:
-            lines.append("No players in this tier.")
-            continue
-
-        for index, row in tier_players.iterrows():
-            rank = int(row.get(RANK_COLUMN, index + 1))
-            name = str(row.get("Name", "N/A")).ljust(max_name_len)
-            position = str(row.get("Position", "N/A")).ljust(10)
-            score = row.get(SCORE_COLUMN, 0)
-            lines.append(f"{rank:2}. {name} - {position} ({score:.2f})")
+    for index, row in board.iterrows():
+        rank = int(row.get(RANK_COLUMN, index + 1))
+        name = str(row.get("Name", "N/A")).ljust(max_name_len)
+        position = row.get("Position", "N/A")
+        team = row.get("College/Team", "N/A")
+        lines.append(f"{rank:2}. {name} - {position} - {team}")
 
     return "\n".join(lines)

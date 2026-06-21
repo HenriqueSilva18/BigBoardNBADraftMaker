@@ -29,6 +29,19 @@ APP_CSS = """
         var(--court-bg);
     background-size: 72px 72px, 72px 72px, auto, auto, auto;
     color: var(--court-text);
+    cursor: default;
+}
+
+.stApp *:not(input):not(textarea):not(select):not([contenteditable="true"]):not(button):not(a):not([role="slider"]):not([role="textbox"]):not([role="combobox"]):not([role="listbox"]):not([role="option"]):not([role="spinbutton"]) {
+    cursor: default;
+}
+
+.stApp [data-testid="stMarkdownContainer"],
+.stApp [data-testid="stMarkdownContainer"] * {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: default !important;
+    caret-color: transparent !important;
 }
 
 .block-container {
@@ -227,6 +240,138 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
     text-align: center;
 }
 
+.compare-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin: 0.85rem 0 1.1rem;
+}
+
+.compare-card {
+    background:
+        linear-gradient(180deg, rgba(21, 29, 23, 0.96), rgba(13, 18, 15, 0.96));
+    border: 1px solid var(--court-line);
+    border-radius: 8px;
+    min-height: 150px;
+    padding: 0.9rem 0.95rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+
+.compare-card::after {
+    content: "";
+    position: absolute;
+    inset: auto -3rem -4rem auto;
+    width: 8rem;
+    height: 8rem;
+    border-radius: 999px;
+    background: rgba(54, 199, 130, 0.10);
+}
+
+.stApp .compare-rank {
+    color: var(--court-gold) !important;
+    font-size: 0.9rem;
+    font-weight: 900;
+}
+
+.stApp .compare-name {
+    color: var(--court-text) !important;
+    font-size: 1.18rem;
+    font-weight: 900;
+    line-height: 1.15;
+    margin-top: 0.35rem;
+}
+
+.stApp .compare-meta {
+    color: var(--court-muted) !important;
+    font-size: 0.84rem;
+    margin-top: 0.3rem;
+}
+
+.stApp .compare-score {
+    color: #06100a !important;
+    background: var(--court-green);
+    border-radius: 999px;
+    display: inline-block;
+    font-size: 0.96rem;
+    font-weight: 950;
+    margin-top: 0.65rem;
+    padding: 0.22rem 0.55rem;
+}
+
+.compare-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.7rem;
+    position: relative;
+    z-index: 1;
+}
+
+.stApp .compare-chip-row span {
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    color: var(--court-muted) !important;
+    font-size: 0.76rem;
+    padding: 0.18rem 0.48rem;
+}
+
+.stApp .compare-subtitle {
+    color: var(--court-green) !important;
+    font-size: 0.82rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    margin: 0.9rem 0 0.5rem;
+    text-transform: uppercase;
+}
+
+.comparison-table-wrap {
+    border: 1px solid var(--court-line);
+    border-radius: 8px;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    background: #0d120f;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+}
+
+.comparison-table-wrap table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100% !important;
+}
+
+.comparison-table-wrap th,
+.comparison-table-wrap td {
+    border: 1px solid var(--court-line) !important;
+    font-size: clamp(0.72rem, 0.82vw, 0.92rem);
+    line-height: 1.25;
+    overflow: hidden;
+    padding: 0.55rem 0.45rem !important;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: normal;
+    word-break: normal;
+}
+
+.comparison-table-wrap th {
+    background: #151d17 !important;
+    color: var(--court-muted) !important;
+    font-weight: 900 !important;
+}
+
+.comparison-table-wrap td {
+    color: var(--court-text);
+}
+
+.comparison-table-wrap th:first-child,
+.comparison-table-wrap td:first-child {
+    text-align: left;
+    width: 12%;
+}
+
 .player-chip {
     display: flex;
     flex-wrap: wrap;
@@ -340,6 +485,20 @@ label,
 
 [data-testid="stSlider"] div[data-testid="stTickBar"] {
     color: var(--court-dim) !important;
+}
+
+[data-testid="stSlider"] input,
+[data-testid="stSlider"] [contenteditable="true"],
+[data-testid="stSlider"] [role="spinbutton"] {
+    caret-color: transparent !important;
+    cursor: default !important;
+}
+
+[data-testid="stSlider"] input:focus,
+[data-testid="stSlider"] [contenteditable="true"]:focus,
+[data-testid="stSlider"] [role="spinbutton"]:focus {
+    caret-color: transparent !important;
+    outline: none !important;
 }
 
 [data-testid="stFileUploader"] section {
