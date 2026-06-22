@@ -60,7 +60,7 @@ def load_font(size: int, bold: bool = False):
         if path.exists():
             return ImageFont.truetype(str(path), size=size)
             
-    # Fallback for stlite / Pyodide deployment
+    # Fallback for Linux / Streamlit Cloud deployment
     fallback_font = "Roboto-Bold.ttf" if bold else "Roboto-Regular.ttf"
     if Path(fallback_font).exists():
         return ImageFont.truetype(fallback_font, size=size)

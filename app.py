@@ -3,7 +3,7 @@ from textwrap import dedent
 
 import pandas as pd
 import streamlit as st
-from streamlit_sortables import sort_items
+import streamlit.components.v1 as components
 
 from big_board_app.config import (
     APP_SUBTITLE,
@@ -390,33 +390,27 @@ def render_live_board():
         )
         return
 
-    rows = []
-    ranked_board = order_big_board(board).reset_index(drop=True)
-    for index, row in ranked_board.iterrows():
-        rank = int(row.get(RANK_COLUMN, index + 1))
-        name = safe_text(row.get("Name", "N/A"))
-        position = safe_text(row.get("Position", "N/A"))
-        team = safe_text(row.get("College/Team", "N/A"))
-        age = safe_text(row.get("Age", "N/A"))
-        measurements = safe_text(row.get("Measurements", "N/A"))
-        score = float(row.get(SCORE_COLUMN, 0))
-        rows.append(f"""
-        <div class="board-row">
-            <div class="board-rank">#{rank}</div>
-            <div>
-                <div class="board-name">{name}</div>
-                <div class="board-meta">{position} - {team} - {age} - {measurements}</div>
-            </div>
-            <div class="board-score">{score:.2f}</div>
-        </div>
-        """)
+    display_board = get_display_board()
+    
+    col_caption, col_button = st.columns([0.65, 0.35], vertical_alignment="center")
+    with col_caption:
+        st.caption("Drag players up or down to change the board order.")
+    with col_button:
+        if st.button("Sort by score", use_container_width=True, help="Sort all players by their current score from highest to lowest."):
+            board = board.sort_values(by=[SCORE_COLUMN, "Name"], ascending=[False, True]).reset_index(drop=True)
+            board[RANK_COLUMN] = range(1, len(board) + 1)
+            set_board(board)
+            save_big_board_to_file(st.session_state.big_board)
+            st.rerun()
 
-    html(
-        f"""
-        <div class="board-card">
-        {''.join(rows)}
-        </div>
-        """
+    render_drag_board(display_board)
+
+    st.download_button(
+        label="Download pretty board PNG",
+        data=board_to_png_bytes(board),
+        file_name="draft_room_2026_board.png",
+        mime="image/png",
+        use_container_width=True,
     )
 
 
@@ -429,93 +423,32 @@ def get_display_board():
     return display_board[BOARD_COLUMNS]
 
 
-def sortable_label(row):
-    score = float(row.get(SCORE_COLUMN, 0))
-    info = " - ".join(
-        str(value)
-        for value in [row.get("Position", "N/A"), row.get("College/Team", "N/A")]
-        if pd.notna(value) and str(value) != "N/A"
-    )
-    label = f"{row['Name']} | {info}" if info else str(row["Name"])
-    return f"{label} | {score:.2f}"
+custom_drag_board = components.declare_component(
+    "custom_drag_board",
+    path="big_board_app/custom_drag_board"
+)
 
 
 def render_drag_board(display_board):
-    label_to_name = {
-        sortable_label(row): row["Name"]
-        for _, row in display_board.iterrows()
-    }
-    items = list(label_to_name.keys())
-    custom_style = """
-    .sortable-component {
-        background: transparent;
-    }
-    .sortable-container {
-        background: #0d120f;
-        border: 1px solid #2c3a31;
-        border-radius: 8px;
-        padding: 0.75rem;
-        max-height: 640px;
-        overflow-y: auto;
-    }
-    .sortable-container-header {
-        display: none;
-    }
-    .sortable-container-body {
-        background: transparent;
-        counter-reset: board-rank;
-    }
-    .sortable-item {
-        background: linear-gradient(180deg, #151d17, #101610);
-        border: 1px solid #2d4436;
-        border-radius: 8px;
-        box-sizing: border-box;
-        color: #f4f1e8;
-        cursor: grab;
-        display: flex;
-        align-items: center;
-        font-family: Inter, Segoe UI, Arial, sans-serif;
-        font-size: 0.96rem;
-        font-weight: 700;
-        min-height: 56px;
-        margin-bottom: 0.55rem;
-        padding: 0.75rem 0.85rem;
-        box-shadow: 0 10px 24px rgba(0,0,0,0.22);
-        transform: none !important;
-        transition: border-color 120ms ease, box-shadow 120ms ease;
-        width: 100%;
-    }
-    .sortable-item::before {
-        color: #f2c66d;
-        content: "#" counter(board-rank) "  ";
-        counter-increment: board-rank;
-        font-weight: 900;
-    }
-    .sortable-item:hover {
-        border-color: #36c782;
-        color: #ffffff;
-        box-shadow: 0 10px 24px rgba(0,0,0,0.22);
-        min-height: 56px;
-        padding: 0.75rem 0.85rem;
-        transform: none !important;
-        width: 100%;
-    }
-    .sortable-item:active {
-        cursor: grabbing;
-        transform: none !important;
-    }
-    """
-    sorted_items = sort_items(
-        items,
-        direction="vertical",
-        custom_style=custom_style,
-        key=f"drag_big_board_order_{hash(tuple(items))}",
-    )
-    sorted_names = [label_to_name[item] for item in sorted_items if item in label_to_name]
+    items = []
+    for _, row in display_board.iterrows():
+        score = float(row.get(SCORE_COLUMN, 0))
+        info = " - ".join(
+            str(value)
+            for value in [row.get("Position", "N/A"), row.get("College/Team", "N/A"), row.get("Age", "N/A"), row.get("Measurements", "N/A")]
+            if pd.notna(value) and str(value) != "N/A"
+        )
+        items.append({
+            "name": row["Name"],
+            "meta": info,
+            "score": f"{score:.2f}"
+        })
 
-    if sorted_names != display_board["Name"].tolist():
+    new_order = custom_drag_board(items=items, key="custom_drag_board")
+
+    if new_order and new_order != display_board["Name"].tolist():
         board = get_board()
-        rank_lookup = {name: index + 1 for index, name in enumerate(sorted_names)}
+        rank_lookup = {name: index + 1 for index, name in enumerate(new_order)}
         board[RANK_COLUMN] = board["Name"].map(rank_lookup).fillna(board[RANK_COLUMN])
         set_board(board)
         save_big_board_to_file(st.session_state.big_board)
@@ -544,7 +477,6 @@ def render_tier_editor(display_board):
 
 def render_rankings():
     html('<div class="section-label">Rankings</div>')
-    st.subheader("Drag Big Board")
 
     display_board = get_display_board()
     if display_board.empty:
@@ -557,19 +489,7 @@ def render_rankings():
         )
         return
 
-    st.caption("Drag players up or down to change the board order. The order is saved automatically.")
-    render_drag_board(display_board)
-
-    with st.expander("Tier overrides"):
-        render_tier_editor(display_board)
-
-    st.download_button(
-        label="Download pretty board PNG",
-        data=board_to_png_bytes(get_board()),
-        file_name="draft_room_2026_board.png",
-        mime="image/png",
-        use_container_width=True,
-    )
+    st.dataframe(display_board, use_container_width=True, hide_index=True)
 
 
 def render_stats_comparison(df, selected_players):

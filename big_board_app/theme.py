@@ -429,25 +429,67 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
     color: var(--court-text) !important;
 }
 
-.stButton > button,
-.stDownloadButton > button,
-[data-testid="stFormSubmitButton"] button {
-    border-radius: 8px;
-    border: 1px solid var(--court-green);
-    background: var(--court-green-strong);
-    color: #ffffff !important;
-    font-weight: 700;
+/* =========================================================
+   BUTTONS — outlined ghost style, fills on hover
+   ========================================================= */
+
+div[data-testid="stButton"] button,
+div[data-testid="stDownloadButton"] button,
+div[data-testid="stFormSubmitButton"] button,
+.stButton button,
+.stDownloadButton button,
+.stFormSubmitButton button {
+    border-radius: 6px !important;
+    border: 1.5px solid var(--court-green) !important;
+    background: transparent !important;
+    font-family: Inter, Segoe UI, Arial, sans-serif !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase !important;
+    font-size: 0.78rem !important;
+    padding: 0.55rem 1.2rem !important;
+    transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease !important;
 }
 
-.stButton > button:hover,
-.stDownloadButton > button:hover,
-[data-testid="stFormSubmitButton"] button:hover {
-    border-color: var(--court-green);
-    background: #25a96c;
-    color: #ffffff !important;
+div[data-testid="stButton"] button *,
+div[data-testid="stDownloadButton"] button *,
+div[data-testid="stFormSubmitButton"] button *,
+.stButton button *,
+.stDownloadButton button *,
+.stFormSubmitButton button * {
+    color: var(--court-green) !important;
+    font-weight: 700 !important;
 }
 
-div[data-baseweb="select"] > div,
+div[data-testid="stButton"] button:hover,
+div[data-testid="stDownloadButton"] button:hover,
+div[data-testid="stFormSubmitButton"] button:hover,
+.stButton button:hover,
+.stDownloadButton button:hover,
+.stFormSubmitButton button:hover {
+    background: var(--court-green) !important;
+    border-color: var(--court-green) !important;
+    box-shadow: 0 0 14px rgba(54, 199, 130, 0.35) !important;
+    transform: translateY(-1px) !important;
+}
+
+div[data-testid="stButton"] button:hover *,
+div[data-testid="stDownloadButton"] button:hover *,
+div[data-testid="stFormSubmitButton"] button:hover *,
+.stButton button:hover *,
+.stDownloadButton button:hover *,
+.stFormSubmitButton button:hover * {
+    color: #0b100d !important;
+}
+
+div[data-testid="stButton"] button:active,
+div[data-testid="stDownloadButton"] button:active,
+div[data-testid="stFormSubmitButton"] button:active,
+.stButton button:active,
+.stDownloadButton button:active,
+.stFormSubmitButton button:active {
+    transform: translateY(0) !important;
+    box-shadow: 0 0 6px rgba(54, 199, 130, 0.2) !important;
+}
 div[data-baseweb="input"] > div,
 div[data-baseweb="textarea"] > div {
     border-radius: 8px;

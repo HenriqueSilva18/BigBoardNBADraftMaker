@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <style>
+        :root {
+            --court-bg: #070a08;
+            --court-panel: #101610;
+            --court-panel-2: #151d17;
+            --court-line: #2c3a31;
+            --court-line-strong: #496253;
+            --court-text: #f4f1e8;
+            --court-muted: #b6c2b8;
+            --court-dim: #839187;
+            --court-green: #36c782;
+            --court-green-strong: #1c9e5e;
+            --court-gold: #f2c66d;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: "Inter", "Segoe UI", Arial, sans-serif;
+            color: var(--court-text);
+        }
+
+        .board-card {
+            background: linear-gradient(180deg, rgba(21, 29, 23, 0.96), rgba(13, 18, 15, 0.96));
+            border: 1px solid var(--court-line);
+            border-radius: 8px;
+            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.28);
+            padding: 1rem;
+            max-height: 560px;
+            overflow-y: auto;
+            scrollbar-color: var(--court-green) #0b100d;
+            scrollbar-width: thin;
+        }
+
+        .board-card::-webkit-scrollbar {
+            width: 0.55rem;
+        }
+
+        .board-card::-webkit-scrollbar-track {
+            background: #0b100d;
+            border-radius: 999px;
+        }
+
+        .board-card::-webkit-scrollbar-thumb {
+            background: var(--court-green-strong);
+            border-radius: 999px;
+        }
+
+        .board-row {
+            display: grid;
+            grid-template-columns: 2.3rem minmax(0, 1fr) 4.1rem;
+            gap: 0.75rem;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 0.7rem 0;
+            cursor: grab;
+            user-select: none;
+        }
+
+        .board-row:active {
+            cursor: grabbing;
+        }
+
+        .board-row:last-child {
+            border-bottom: 0;
+        }
+
+        .board-row.sortable-ghost {
+            opacity: 0.4;
+            background: rgba(54, 199, 130, 0.1);
+        }
+
+        .board-rank {
+            color: var(--court-gold);
+            font-size: 0.95rem;
+            font-weight: 900;
+        }
+
+        .board-name {
+            color: var(--court-text);
+            font-weight: 800;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .board-meta {
+            color: var(--court-dim);
+            font-size: 0.78rem;
+            margin-top: 0.15rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .board-score {
+            color: #0b100d;
+            background: var(--court-green);
+            border-radius: 999px;
+            font-size: 0.86rem;
+            font-weight: 900;
+            padding: 0.24rem 0.45rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="board" class="board-card"></div>
+    <script>
+        const Streamlit = {
+            setComponentReady: function() {
+                window.parent.postMessage({
+                    isStreamlitMessage: true,
+                    type: "streamlit:componentReady",
+                    apiVersion: 1
+                }, "*");
+            },
+            setFrameHeight: function() {
+                window.parent.postMessage({
+                    isStreamlitMessage: true,
+                    type: "streamlit:setFrameHeight",
+                    height: document.body.scrollHeight
+                }, "*");
+            },
+            setComponentValue: function(value) {
+                window.parent.postMessage({
+                    isStreamlitMessage: true,
+                    type: "streamlit:setComponentValue",
+                    value: value
+                }, "*");
+            }
+        };
+
+        const boardEl = document.getElementById('board');
+        let currentOrder = [];
+
+        function renderItems(items) {
+            boardEl.innerHTML = '';
+            items.forEach((item, index) => {
+                const row = document.createElement('div');
+                row.className = 'board-row';
+                row.setAttribute('data-name', item.name);
+                row.innerHTML = `
+                    <div class="board-rank">#${index + 1}</div>
+                    <div>
+                        <div class="board-name">${item.name}</div>
+                        <div class="board-meta">${item.meta}</div>
+                    </div>
+                    <div class="board-score">${item.score}</div>
+                `;
+                boardEl.appendChild(row);
+            });
+            Streamlit.setFrameHeight();
+        }
+
+        function onRender(data) {
+            const items = data.args.items;
+            const incomingOrder = items.map(i => i.name);
+            
+            let sameOrder = false;
+            if (window.rendered && incomingOrder.length === currentOrder.length) {
+                sameOrder = true;
+                for (let i = 0; i < incomingOrder.length; i++) {
+                    if (incomingOrder[i] !== currentOrder[i]) {
+                        sameOrder = false;
+                        break;
+                    }
+                }
+            }
+
+            if (!sameOrder) {
+                currentOrder = incomingOrder;
+                renderItems(items);
+            }
+
+            if (!window.rendered) {
+                new Sortable(boardEl, {
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    onEnd: function () {
+                        const newOrder = Array.from(boardEl.children).map(el => el.getAttribute('data-name'));
+                        
+                        let changed = false;
+                        if (newOrder.length === currentOrder.length) {
+                            for (let i = 0; i < newOrder.length; i++) {
+                                if (newOrder[i] !== currentOrder[i]) {
+                                    changed = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            changed = true;
+                        }
+
+                        if (changed) {
+                            Array.from(boardEl.children).forEach((el, i) => {
+                                el.querySelector('.board-rank').innerText = '#' + (i + 1);
+                            });
+                            currentOrder = newOrder;
+                            Streamlit.setComponentValue(newOrder);
+                        }
+                    }
+                });
+                window.rendered = true;
+            }
+            Streamlit.setFrameHeight();
+        }
+
+        window.addEventListener("message", function(event) {
+            if (event.data.type === "streamlit:render") {
+                onRender(event.data);
+            }
+        });
+
+        Streamlit.setComponentReady();
+    </script>
+</body>
+</html>

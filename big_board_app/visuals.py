@@ -125,7 +125,7 @@ def create_overlaid_radar_chart(players_data, figsize=(5.4, 5.4)):
         ax.fill(angles, values, alpha=0.13, color=color)
 
     ax.set_yticks([2, 4, 6, 8, 10])
-    ax.set_yticklabels(["2", "4", "6", "8", "10"], color="#718276", fontsize=8)
+    ax.set_yticklabels([])
     ax.set_xticks(angles[:-1])
     ax.set_xticklabels([])
     ax.set_ylim(0, 10)
