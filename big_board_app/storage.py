@@ -87,9 +87,9 @@ def load_big_board_from_json(fileobj=None, filename=BOARD_SAVE_FILE):
             try:
                 saved_data = js.window.localStorage.getItem("big_board_save_data")
                 if saved_data:
-                    raw = saved_data.encode("utf-8")
-            except Exception:
-                pass
+                    raw = str(saved_data).encode("utf-8")
+            except Exception as e:
+                print(f"Error reading from localStorage: {e}")
         
         if raw is None:
             if filename.exists():
@@ -118,8 +118,9 @@ def save_big_board_to_file(big_board, filename=BOARD_SAVE_FILE):
         try:
             json_data = board.to_json(orient="records", indent=2)
             js.window.localStorage.setItem("big_board_save_data", json_data)
-        except Exception:
-            pass
+            print("Successfully saved to localStorage.")
+        except Exception as e:
+            print(f"Error saving to localStorage: {e}")
 
 
 def big_board_to_json_bytes(big_board):
