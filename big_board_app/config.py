@@ -1,10 +1,19 @@
+import sys
+import shutil
 from pathlib import Path
 
 APP_TITLE = "Draft Room 2026"
 APP_SUBTITLE = "Build, tune, and compare your NBA Draft board."
 
 DATA_FILE = Path("nba_prospects_2026_stats.csv")
-BOARD_SAVE_FILE = Path("big_board_save.json")
+
+if "pyodide" in sys.modules:
+    BOARD_SAVE_FILE = Path("/mnt/big_board_save.json")
+    if not BOARD_SAVE_FILE.exists() and Path("big_board_save.json").exists():
+        # Copy the default empty or pre-existing board to the persistent mount on first load
+        shutil.copy("big_board_save.json", BOARD_SAVE_FILE)
+else:
+    BOARD_SAVE_FILE = Path("big_board_save.json")
 
 SCORE_COLUMN = "Média Ponderada"
 RANK_COLUMN = "Rank"
