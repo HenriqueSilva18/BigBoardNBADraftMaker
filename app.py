@@ -122,7 +122,7 @@ def render_hero(df):
         f"""
         <section class="draft-hero">
             <div class="hero-kicker">Scouting workspace</div>
-            <h1>{APP_TITLE} by Ric</h1>
+            <h1>{APP_TITLE}</h1>
             <p>{APP_SUBTITLE}</p>
         </section>
         <section class="kpi-grid">

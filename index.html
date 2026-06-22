@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NBA Draft Room by Ric</title>
+    <title>NBA Draft Room</title>
 
     <style>
         :root {
@@ -17,22 +17,37 @@
             padding: 0;
             width: 100%;
             height: 100%;
+            min-height: 100dvh;
             overflow: hidden;
             background: #0e1117;
         }
 
         .iframe-wrapper {
             width: 100vw;
-            height: 100vh;
+            height: 100dvh;
             overflow: hidden;
             background: #0e1117;
         }
 
         iframe {
             width: 100vw;
-            height: calc(100vh + var(--hide-streamlit-footer-height));
+            height: calc(100dvh + var(--hide-streamlit-footer-height));
             border: none;
             display: block;
+        }
+
+        /* Mobile: não cortar conteúdo da app */
+        @media (max-width: 768px) {
+            :root {
+                --hide-streamlit-footer-height: 40px;
+            }
+
+            iframe {
+                width: 100vw;
+                height: calc(100dvh + var(--hide-streamlit-footer-height));
+                border: none;
+                display: block;
+            }
         }
     </style>
 </head>
