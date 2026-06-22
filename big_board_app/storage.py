@@ -71,18 +71,39 @@ def normalize_big_board(df):
     return normalize_ranks(board)
 
 
+try:
+    import js
+    IS_BROWSER = True
+except ImportError:
+    IS_BROWSER = False
+
+
 def load_big_board_from_json(fileobj=None, filename=BOARD_SAVE_FILE):
     if fileobj is not None:
         raw = fileobj.read()
-    elif filename.exists():
-        raw = filename.read_bytes()
     else:
-        return None
+        raw = None
+        if IS_BROWSER:
+            try:
+                saved_data = js.window.localStorage.getItem("big_board_save_data")
+                if saved_data:
+                    raw = saved_data.encode("utf-8")
+            except Exception:
+                pass
+        
+        if raw is None:
+            if filename.exists():
+                raw = filename.read_bytes()
+            else:
+                return None
 
     if isinstance(raw, str):
         raw = raw.encode("utf-8")
 
-    data = json.loads(raw.decode("utf-8"))
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
     if isinstance(data, dict):
         data = [data]
 
@@ -92,6 +113,13 @@ def load_big_board_from_json(fileobj=None, filename=BOARD_SAVE_FILE):
 def save_big_board_to_file(big_board, filename=BOARD_SAVE_FILE):
     board = normalize_big_board(big_board)
     board.to_json(filename, orient="records", indent=2)
+    
+    if IS_BROWSER:
+        try:
+            json_data = board.to_json(orient="records", indent=2)
+            js.window.localStorage.setItem("big_board_save_data", json_data)
+        except Exception:
+            pass
 
 
 def big_board_to_json_bytes(big_board):
