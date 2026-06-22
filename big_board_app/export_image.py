@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import RANK_COLUMN
+from .config import RANK_COLUMN, APP_WEBSITE
 from .storage import order_big_board
 
 # ── Colours ────────────────────────────────────────────────────────────────
@@ -307,6 +307,9 @@ def board_to_png_bytes(big_board) -> bytes:
     fy = H - FOOT_H + 16
     draw.line([(PAD, fy), (W - PAD, fy)], fill=(*BORDER, 140), width=2)
     draw.text((PAD + 8, fy + 24), "Made by Ric", font=f_foot, fill=DIM_FULL)
+    
+    website_w = int(draw.textlength(APP_WEBSITE, font=f_foot))
+    draw.text((W - PAD - 8 - website_w, fy + 24), APP_WEBSITE, font=f_foot, fill=DIM_FULL)
 
     # ── Export ─────────────────────────────────────────────────────────────
     buf = BytesIO()

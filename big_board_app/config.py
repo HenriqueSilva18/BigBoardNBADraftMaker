@@ -4,6 +4,7 @@ from pathlib import Path
 
 APP_TITLE = "Draft Room 2026"
 APP_SUBTITLE = "Build, tune, and compare your NBA Draft board."
+APP_WEBSITE = "RicBigBoardMaker.com"
 
 DATA_FILE = Path("nba_prospects_2026_stats.csv")
 
