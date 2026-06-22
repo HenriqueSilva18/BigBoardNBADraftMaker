@@ -252,7 +252,6 @@ def render_sliders():
                 f"{category} ({WEIGHTS[category] * 100:.0f}%)",
                 min_value=0,
                 max_value=10,
-                value=st.session_state.get(f"slider_{category}", 5),
                 key=f"slider_{category}",
             )
 

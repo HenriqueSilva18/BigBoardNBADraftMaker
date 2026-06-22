@@ -20,6 +20,14 @@ APP_CSS = """
     --court-gold: #f2c66d;
 }
 
+header {
+    display: none !important;
+}
+
+#MainMenu {
+    display: none !important;
+}
+
 .stApp {
     background:
         linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
