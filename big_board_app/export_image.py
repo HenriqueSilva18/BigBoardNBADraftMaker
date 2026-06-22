@@ -306,7 +306,7 @@ def board_to_png_bytes(big_board) -> bytes:
     # ── Footer ─────────────────────────────────────────────────────────────
     fy = H - FOOT_H + 16
     draw.line([(PAD, fy), (W - PAD, fy)], fill=(*BORDER, 140), width=2)
-    draw.text((PAD + 8, fy + 24), "Draft Room 2026", font=f_foot, fill=DIM_FULL)
+    draw.text((PAD + 8, fy + 24), "Made by Ric", font=f_foot, fill=DIM_FULL)
 
     # ── Export ─────────────────────────────────────────────────────────────
     buf = BytesIO()

@@ -509,7 +509,7 @@ def render_drag_board(display_board):
         items,
         direction="vertical",
         custom_style=custom_style,
-        key="drag_big_board_order",
+        key=f"drag_big_board_order_{hash(tuple(items))}",
     )
     sorted_names = [label_to_name[item] for item in sorted_items if item in label_to_name]
 
