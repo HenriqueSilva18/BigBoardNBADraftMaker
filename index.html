@@ -5,7 +5,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NBA Draft Room by Ric</title>
+
     <style>
+        :root {
+            --hide-streamlit-footer-height: 56px;
+        }
+
         html,
         body {
             margin: 0;
@@ -16,9 +21,16 @@
             background: #0e1117;
         }
 
-        iframe {
+        .iframe-wrapper {
             width: 100vw;
             height: 100vh;
+            overflow: hidden;
+            background: #0e1117;
+        }
+
+        iframe {
+            width: 100vw;
+            height: calc(100vh + var(--hide-streamlit-footer-height));
             border: none;
             display: block;
         }
@@ -26,7 +38,9 @@
 </head>
 
 <body>
-    <iframe src="https://nbabigboard.streamlit.app/?embed=true" allow="clipboard-read; clipboard-write"></iframe>
+    <div class="iframe-wrapper">
+        <iframe src="https://nbabigboard.streamlit.app/?embed=true" allow="clipboard-read; clipboard-write"></iframe>
+    </div>
 </body>
 
 </html>
