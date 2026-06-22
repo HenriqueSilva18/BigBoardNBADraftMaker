@@ -25,6 +25,7 @@
   <script src="https://unpkg.com/@stlite/mountable@0.63.1/build/stlite.js"></script>
     <script>
       const base = window.location.href.substring(0, window.location.href.lastIndexOf("/") + 1);
+      const cacheBuster = "?v=2";
       stlite.mount(
         {
           requirements: [
@@ -36,21 +37,21 @@
           ],
           entrypoint: "app.py",
           files: {
-            "app.py": { url: base + "app.py" },
-            "utils.py": { url: base + "utils.py" },
-            "nba_prospects_2025_stats.csv": { url: base + "nba_prospects_2025_stats.csv" },
-            "nba_prospects_2026_stats.csv": { url: base + "nba_prospects_2026_stats.csv" },
-            "big_board_backup_2026.json": { url: base + "big_board_backup_2026.json" },
-            "big_board_save.json": { url: base + "big_board_save.json" },
-            "big_board_nba_draft_2026.txt": { url: base + "big_board_nba_draft_2026.txt" },
-            "big_board_app/__init__.py": { url: base + "big_board_app/__init__.py" },
-            "big_board_app/config.py": { url: base + "big_board_app/config.py" },
-            "big_board_app/data.py": { url: base + "big_board_app/data.py" },
-            "big_board_app/export_image.py": { url: base + "big_board_app/export_image.py" },
-            "big_board_app/scoring.py": { url: base + "big_board_app/scoring.py" },
-            "big_board_app/storage.py": { url: base + "big_board_app/storage.py" },
-            "big_board_app/theme.py": { url: base + "big_board_app/theme.py" },
-            "big_board_app/visuals.py": { url: base + "big_board_app/visuals.py" }
+            "app.py": { url: base + "app.py" + cacheBuster },
+            "utils.py": { url: base + "utils.py" + cacheBuster },
+            "nba_prospects_2025_stats.csv": { url: base + "nba_prospects_2025_stats.csv" + cacheBuster },
+            "nba_prospects_2026_stats.csv": { url: base + "nba_prospects_2026_stats.csv" + cacheBuster },
+            "big_board_backup_2026.json": { url: base + "big_board_backup_2026.json" + cacheBuster },
+            "big_board_save.json": { url: base + "big_board_save.json" + cacheBuster },
+            "big_board_nba_draft_2026.txt": { url: base + "big_board_nba_draft_2026.txt" + cacheBuster },
+            "big_board_app/__init__.py": { url: base + "big_board_app/__init__.py" + cacheBuster },
+            "big_board_app/config.py": { url: base + "big_board_app/config.py" + cacheBuster },
+            "big_board_app/data.py": { url: base + "big_board_app/data.py" + cacheBuster },
+            "big_board_app/export_image.py": { url: base + "big_board_app/export_image.py" + cacheBuster },
+            "big_board_app/scoring.py": { url: base + "big_board_app/scoring.py" + cacheBuster },
+            "big_board_app/storage.py": { url: base + "big_board_app/storage.py" + cacheBuster },
+            "big_board_app/theme.py": { url: base + "big_board_app/theme.py" + cacheBuster },
+            "big_board_app/visuals.py": { url: base + "big_board_app/visuals.py" + cacheBuster }
           },
         },
       document.getElementById("root")

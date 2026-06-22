@@ -14,14 +14,14 @@ APP_CSS = """
     --court-muted: #b6c2b8;
     --court-dim: #839187;
     --court-green: #36c782;
-    --court-green-strong: #1d8f5d;
-    --court-green-soft: rgba(54, 199, 130, 0.16);
-    --court-red: #ff6464;
     --court-gold: #f2c66d;
 }
 
-header {
+header,
+[data-testid="stHeader"],
+[data-testid="stDecoration"] {
     display: none !important;
+    height: 0px !important;
 }
 
 #MainMenu {
